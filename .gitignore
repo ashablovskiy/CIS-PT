@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# uv
+.uv/
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+.next/
+.vercel/
+out/
+*.tsbuildinfo
+
+# Secrets & credentials
+*.json.key
+apps/api/secrets/
+gcp*.json
+*service_account*.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# DSPy compile artifacts
+apps/api/dspy_lab/compiled/
+
+# Eval outputs (keep golden.jsonl, ignore run artifacts)
+eval/runs/
+eval/report.md
+
+# LangSmith local cache
+.langsmith/

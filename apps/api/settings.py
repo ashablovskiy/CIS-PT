@@ -10,6 +10,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # Ignore empty-string env vars (e.g. shell sets ANTHROPIC_API_KEY='')
+        # so the .env file value wins over an empty system env var.
+        env_ignore_empty=True,
     )
 
     # ── Anthropic ─────────────────────────────────────────────────────────

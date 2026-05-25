@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
+
+# Ensure the repo root is on sys.path so `apps.*` imports resolve
+# whether Alembic is invoked from the repo root or any sub-directory.
+_repo_root = str(Path(__file__).resolve().parents[4])
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from apps.api.db.models import Base
+from apps.api.settings import settings  # loads .env via pydantic-settings
 
 config = context.config
 
@@ -17,10 +25,8 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Allow DATABASE_SYNC_URL env var to override alembic.ini value.
-database_sync_url = os.environ.get("DATABASE_SYNC_URL")
-if database_sync_url:
-    config.set_main_option("sqlalchemy.url", database_sync_url)
+# Inject the sync URL from settings (which reads .env) into Alembic config.
+config.set_main_option("sqlalchemy.url", settings.database_sync_url)
 
 
 def run_migrations_offline() -> None:

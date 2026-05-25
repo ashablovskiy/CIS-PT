@@ -40,9 +40,10 @@ gcp*.json
 .DS_Store
 Thumbs.db
 
-# Editor
+# Editor / Claude Code
 .idea/
 .vscode/settings.json
+.claude/
 *.swp
 *.swo
 

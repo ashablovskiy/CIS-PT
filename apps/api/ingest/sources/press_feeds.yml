@@ -1,0 +1,36 @@
+# RSS feeds for the press_agent.
+# Add/remove feeds here without touching Python code.
+# Format: name, url, tags (for rule-based pre-filter boosting)
+
+feeds:
+  - name: td_world
+    url: https://www.tdworld.com/rss.xml
+    tags: [transformers, grid, utility, t_and_d]
+
+  - name: power_magazine
+    url: https://www.powermag.com/feed/
+    tags: [power, generation, grid, transformer]
+
+  - name: data_center_frontier
+    url: https://www.datacenterfrontier.com/rss.xml
+    tags: [datacenter, hyperscaler, demand, power]
+
+  - name: reuters_energy
+    url: https://feeds.reuters.com/reuters/businessNews
+    tags: [energy, commodities, trade]
+
+  - name: ge_vernova_newsroom
+    url: https://www.gevernova.com/news/rss
+    tags: [ge_vernova, transformer, backlog, supplier]
+
+  - name: siemens_energy_press
+    url: https://press.siemens-energy.com/global/en/rss.xml
+    tags: [siemens_energy, transformer, supplier]
+
+  - name: hitachi_energy_news
+    url: https://www.hitachienergy.com/news/rss
+    tags: [hitachi_energy, transformer, supplier]
+
+  - name: spglobal_commodities
+    url: https://www.spglobal.com/commodityinsights/en/rss-feed/
+    tags: [commodities, steel, copper, aluminum, goes]

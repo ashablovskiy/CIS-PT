@@ -1,0 +1,44 @@
+version: "3.9"
+
+# Local dev infrastructure only.
+# Production uses: Neon (Postgres) + Neo4j AuraDB Free.
+# Requires Docker Desktop: https://www.docker.com/products/docker-desktop/
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cis-postgres
+    environment:
+      POSTGRES_USER: cis
+      POSTGRES_PASSWORD: cis
+      POSTGRES_DB: cis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5
+    container_name: cis-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"   # browser
+      - "7687:7687"   # bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+  neo4j_data:

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 
+import inngest.fast_api
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from apps.api.inngest_functions.agent_crons import ALL_FUNCTIONS, inngest_client
 from apps.api.settings import settings
 
 logging.basicConfig(level=settings.log_level)
@@ -26,6 +28,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# ── Inngest (serves webhook at /api/inngest) ──────────────────────────────────
+inngest.fast_api.serve(
+    app,
+    inngest_client,
+    ALL_FUNCTIONS,
+    serve_path="/api/inngest",
 )
 
 

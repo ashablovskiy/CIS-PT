@@ -119,5 +119,33 @@ sec_fn = _make_agent_fn(
     lookback_hours=25,
 )
 
+# ── Assessment pipeline cron — runs 15 min after each ingestion sweep ────────
+
+@inngest_client.create_function(
+    fn_id="cis/assessment-pipeline",
+    trigger=inngest.TriggerCron(cron="45 * * * *"),  # every hour at :45
+    concurrency=[inngest.Concurrency(limit=1)],
+)
+async def assessment_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
+    """Run impact assessment for all escalated signals not yet assessed."""
+
+    async def run_assessments() -> dict:
+        from apps.api.assess.pipeline import run_assessments_for_escalated
+        states = await run_assessments_for_escalated(lookback_hours=2)
+        return {
+            "assessed": len(states),
+            "complete": sum(1 for s in states if s.critic_passed),
+            "needs_review": sum(1 for s in states if not s.critic_passed and s.triage_passed),
+            "errors": sum(1 for s in states if s.errors),
+        }
+
+    result = await step.run("run_assessments", run_assessments)
+    logger.info("[assessment_pipeline] Inngest run complete: %s", result)
+    return result
+
+
 # All functions for FastAPI registration
-ALL_FUNCTIONS = [prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn]
+ALL_FUNCTIONS = [
+    prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn,
+    assessment_fn,
+]

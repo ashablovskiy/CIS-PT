@@ -29,16 +29,24 @@ class ImpactDimension(StrEnum):
 
 
 class ClassificationResult(BaseModel):
-    event_class: EventClass
+    model_config = {"extra": "ignore"}
+
+    event_class: EventClass = EventClass.OTHER
     geo_tags: list[str] = Field(default_factory=list)
     graph_entities: dict[str, list[str]] = Field(
         default_factory=dict,
         description="Map of entity type → list of entity names found in the signal",
     )
     commodities: list[str] = Field(default_factory=list)
-    impact_dimensions: list[ImpactDimension] = Field(default_factory=list)
-    confidence: float = Field(ge=0.0, le=1.0)
+    # Accept any string from LLM; filter to valid enum values silently
+    impact_dimensions: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     reasoning: str = ""
+
+    @property
+    def valid_impact_dimensions(self) -> list[ImpactDimension]:
+        valid = {d.value for d in ImpactDimension}
+        return [ImpactDimension(d) for d in self.impact_dimensions if d in valid]
 
 
 class RelevanceScore(BaseModel):

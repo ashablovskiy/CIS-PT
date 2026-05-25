@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from typing import Any
 
 import anthropic

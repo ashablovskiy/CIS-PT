@@ -1,0 +1,634 @@
+{
+  "_meta": {
+    "generated": "2026-05-25",
+    "generator": "Claude Opus 4.7 (static seed per ADR-0001)",
+    "count": 8,
+    "note": "All entities are fictional supply agreements drafted for demonstration. Clause language is modeled on industry-standard procurement contracts but does not represent any real agreement."
+  },
+  "contracts": [
+    {
+      "external_id": "CIS-2026-001",
+      "supplier_name": "GE Vernova",
+      "category": "Power_Transformer_Large",
+      "start_date": "2025-01-01",
+      "end_date": "2029-12-31",
+      "total_value_usd": 425000000,
+      "metadata": {
+        "voltage_classes": ["230kV", "345kV"],
+        "annual_volume_units": 25,
+        "pricing_model": "fully_indexed",
+        "currency": "USD",
+        "manufacturing_plants": ["GE Vernova Pittsburgh", "GE Vernova Memphis"],
+        "delivery_basis": "DAP buyer site (continental US)"
+      },
+      "clauses": [
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Section 8.2 — Material Price Adjustment. The Base Contract Price established in Section 4.1 shall be adjusted on a quarterly basis to reflect movements in the underlying raw material costs in accordance with the following formula: Adjusted Price = Base Price × (1 + Δ_basket), where Δ_basket = 0.45 × Δ_GOES + 0.35 × Δ_Cu + 0.20 × Δ_Al. GOES reference index: CRU Group Grain-Oriented Electrical Steel Index, monthly average for the calculation quarter, compared against the Base Reference Period (Q1 2024 average). Cu and Al reference indices: LME Cash Settlement, three-month rolling average through the last business day of the calculation quarter. Price adjustments shall only be applied if the absolute value of Δ_basket exceeds three percent (3.0%) in either direction. Adjustments below this threshold shall be deferred and aggregated with subsequent quarters until the threshold is met. Notice of adjustment shall be delivered no later than thirty (30) days after the close of each calculation quarter.",
+          "parsed_params": {
+            "weights": {"GOES": 0.45, "Copper": 0.35, "Aluminum": 0.20},
+            "windows": {"GOES": "monthly_avg", "Copper": "3m_avg", "Aluminum": "3m_avg"},
+            "trigger_threshold_pct": 3.0,
+            "review_cadence": "quarterly",
+            "base_period": "Q1_2024",
+            "indices": {"GOES": "CRU_GOES_Index", "Copper": "LME_Cu_Cash", "Aluminum": "LME_Al_Cash"},
+            "notice_period_days": 30,
+            "deferral_allowed": true
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": ["GOES"],
+          "text": "Section 14.1 — Force Majeure. Neither party shall be liable for any failure or delay in performance directly caused by events beyond the reasonable control of the affected party, including acts of God, war, terrorism, civil unrest, governmental action, sanctions, embargoes, and natural disasters. Specifically excluded: general market price increases, labor disputes confined to the affected party's workforce, and routine mechanical breakdowns. Specifically included: (a) typhoons or earthquakes affecting Tier-2 suppliers in the Republic of Korea or Japan, where such event is documented by the relevant national authority and confirmed in writing within five (5) business days of occurrence; (b) closure or material disruption of the Panama Canal, Suez Canal, or any port-of-call on the agreed shipping itinerary exceeding seven (7) consecutive days; (c) imposition by the U.S. or any other relevant jurisdiction of new export controls or tariffs affecting grain-oriented electrical steel exceeding fifteen percent (15%) ad valorem. The affected party must notify the other party in writing within seventy-two (72) hours. If a Force Majeure event continues for more than ninety (90) days, either party may terminate the affected purchase order without penalty.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "typhoon_earthquake", "regions": ["KR", "JP"], "applies_to": "sub_tier", "confirmation_window_business_days": 5},
+              {"type": "canal_or_port_closure", "min_duration_days": 7},
+              {"type": "trade_action", "commodities": ["GOES"], "threshold_pct": 15.0}
+            ],
+            "carveouts_excluded": ["market_price_increases", "internal_labor_disputes", "routine_breakdowns"],
+            "notification_hours": 72,
+            "termination_threshold_days": 90
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Section 11.3 — Liquidated Damages. In the event Seller fails to achieve Mechanical Completion of any Unit by its contractual Delivery Date, Seller shall pay Buyer liquidated damages of zero point one five percent (0.15%) of the Unit Price per calendar week of delay, capped in aggregate at ten percent (10%) of the Unit Price. The first two (2) weeks of delay shall be a cure period during which no LDs accrue. LDs are exclusive of and not in lieu of Seller's obligation to deliver, and shall not apply where the delay is caused by a Force Majeure event under Section 14.1 or a Buyer-caused delay documented under Section 11.4.",
+          "parsed_params": {
+            "rate_pct_per_week": 0.15,
+            "cap_pct_of_unit_price": 10.0,
+            "cure_period_weeks": 2,
+            "exclusions": ["force_majeure", "buyer_caused_delay"]
+          }
+        },
+        {
+          "clause_type": "slot",
+          "references_commodities": [],
+          "text": "Section 6.4 — Production Slot Reservation. Buyer reserves twenty-five (25) production slots per Contract Year at Seller's Pittsburgh and Memphis facilities, distributed substantially evenly across calendar quarters. Slot dates are confirmed no later than December 1 of the preceding Contract Year. Forfeited or unused slots shall be billable at fifteen percent (15%) of the Unit Price as a slot-reservation fee unless Buyer provides written release at least one hundred twenty (120) days prior to the scheduled slot start.",
+          "parsed_params": {
+            "annual_slot_count": 25,
+            "facilities": ["GE Vernova Pittsburgh", "GE Vernova Memphis"],
+            "confirmation_date": "December_1_preceding_year",
+            "release_notice_days": 120,
+            "forfeit_fee_pct": 15.0
+          }
+        },
+        {
+          "clause_type": "heavy_lift",
+          "references_commodities": [],
+          "text": "Section 9.6 — Heavy-Lift Inland Logistics. Seller is responsible for delivery to the named site in accordance with the agreed Incoterms (DAP). Seller shall procure and bear cost of heavy-lift inland transportation, including specialized rail cars, multi-axle trailers, route surveys, utility-line coordination, and any required permits. Where Buyer's named delivery site requires bridge load-rating studies or temporary infrastructure modification exceeding fifty thousand US dollars ($50,000) per Unit, the excess shall be a Buyer cost. Seller shall provide at least sixty (60) days prior notice of any planned heavy-lift movement.",
+          "parsed_params": {
+            "responsibility": "seller",
+            "scope": ["rail", "trailer", "route_survey", "utility_coordination", "permits"],
+            "buyer_cost_threshold_usd": 50000,
+            "advance_notice_days": 60
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Section 9.1 — Delivery Basis. All Units shall be delivered DAP (Incoterms 2020) at the Buyer-named site identified in the applicable Purchase Order. Risk of loss transfers upon arrival ready for unloading at the named place.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "DAP",
+            "named_place_type": "buyer_site",
+            "risk_transfer": "arrival_ready_for_unloading"
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-002",
+      "supplier_name": "Siemens Energy",
+      "category": "Power_Transformer_GSU",
+      "start_date": "2025-04-01",
+      "end_date": "2028-03-31",
+      "total_value_usd": 285000000,
+      "metadata": {
+        "voltage_classes": ["500kV"],
+        "annual_volume_units": 12,
+        "pricing_model": "hybrid_indexed_with_cap_floor",
+        "currency": "USD",
+        "manufacturing_plants": ["Siemens Nuremberg", "Siemens Weiz"],
+        "delivery_basis": "DAP buyer site (US)"
+      },
+      "clauses": [
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Article 7 — Price Adjustment with Cap and Floor. The Unit Price shall be subject to a semi-annual review and adjusted to reflect underlying material cost movements according to: Adjusted Price = Base Price × (1 + Δ_basket), where Δ_basket = 0.50 × Δ_GOES + 0.30 × Δ_Cu + 0.20 × Δ_Al. References: CRU GOES Index, LME Cu Cash, LME Al Cash, each as six-month rolling averages. Any adjustment exceeding plus seven percent (+7%) in a single review period shall be capped at +7%; any adjustment below minus four percent (−4%) shall be floored at −4%. Amounts beyond the cap or floor shall not roll forward.",
+          "parsed_params": {
+            "weights": {"GOES": 0.50, "Copper": 0.30, "Aluminum": 0.20},
+            "windows": {"GOES": "6m_avg", "Copper": "6m_avg", "Aluminum": "6m_avg"},
+            "review_cadence": "semi_annual",
+            "cap_pct": 7.0,
+            "floor_pct": -4.0,
+            "rollforward": false,
+            "indices": {"GOES": "CRU_GOES_Index", "Copper": "LME_Cu_Cash", "Aluminum": "LME_Al_Cash"}
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Article 18 — Force Majeure. The customary Force Majeure provisions apply, with the following German/EU-specific carve-outs: (a) the imposition of cross-border energy supply restrictions by the European Commission affecting Seller's manufacturing energy supply at the named facilities (Nuremberg, Weiz) shall constitute Force Majeure; (b) industrial action by IG Metall or its affiliated unions confined to Seller's workforce shall NOT constitute Force Majeure; (c) sustained natural-gas curtailments to industrial customers in the Federal Republic of Germany affecting the Nuremberg facility for more than fourteen (14) consecutive days shall constitute Force Majeure. Notification required within ninety-six (96) hours.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "energy_supply_restriction", "regions": ["EU"], "applies_to": "seller_plant"},
+              {"type": "gas_curtailment", "regions": ["DE"], "min_duration_days": 14}
+            ],
+            "carveouts_excluded": [{"type": "internal_industrial_action", "unions": ["IG_Metall"]}],
+            "notification_hours": 96
+          }
+        },
+        {
+          "clause_type": "delivery_obligation",
+          "references_commodities": [],
+          "text": "Article 6 — Delivery Schedule and Milestones. For each Unit, the following payment milestones apply, subject to documentary acceptance by Buyer's site engineer: (i) 15% on order confirmation; (ii) 25% on completion of core stacking; (iii) 25% on winding completion; (iv) 20% on factory acceptance test (FAT) sign-off; (v) 15% on site acceptance test (SAT) sign-off. The agreed Delivery Date is the date of physical arrival at named site, plus or minus fifteen (15) calendar days as a contractual on-time window.",
+          "parsed_params": {
+            "milestones": [
+              {"name": "order_confirmation", "pct": 15},
+              {"name": "core_stacking_complete", "pct": 25},
+              {"name": "winding_complete", "pct": 25},
+              {"name": "fat_signoff", "pct": 20},
+              {"name": "sat_signoff", "pct": 15}
+            ],
+            "on_time_window_days": 15
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Article 11 — Liquidated Damages. LDs of 0.20% of Unit Price per week of delay beyond the on-time window in Article 6, capped at 8% of Unit Price. No cure period.",
+          "parsed_params": {
+            "rate_pct_per_week": 0.20,
+            "cap_pct_of_unit_price": 8.0,
+            "cure_period_weeks": 0,
+            "exclusions": ["force_majeure"]
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Article 9 — Delivery Basis. DAP (Incoterms 2020) at the Buyer's named US site. Inland US heavy-lift logistics under Seller's responsibility and cost. Ocean carriage from Hamburg or Bremerhaven to US East Coast (Norfolk or Savannah) per Seller's logistics plan.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "DAP",
+            "named_place_type": "buyer_site",
+            "origin_ports": ["Hamburg", "Bremerhaven"],
+            "destination_ports": ["Norfolk", "Savannah"]
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-003",
+      "supplier_name": "Hitachi Energy",
+      "category": "Power_Transformer_HVDC_Converter",
+      "start_date": "2025-07-01",
+      "end_date": "2029-06-30",
+      "total_value_usd": 560000000,
+      "metadata": {
+        "voltage_classes": ["±525kV DC"],
+        "annual_volume_units": 8,
+        "pricing_model": "fully_indexed_steel_heavy",
+        "currency": "USD",
+        "manufacturing_plants": ["Hitachi Ludvika"],
+        "delivery_basis": "CIF Norfolk, then Buyer inland"
+      },
+      "clauses": [
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["GOES", "Copper"],
+          "text": "Clause 12 — Material Cost Pass-Through. Given the unusually steel-intensive design of HVDC converter transformers, the parties agree the indexation basket shall be weighted: Δ_basket = 0.60 × Δ_GOES + 0.30 × Δ_Cu + 0.10 × Δ_Al. Reference indices and windows are identical to Schedule A: CRU GOES Index (monthly avg) and LME Cu/Al Cash (3-month rolling). Adjustment cadence: quarterly. Trigger threshold: 2.5% (absolute). No cap, no floor — full pass-through.",
+          "parsed_params": {
+            "weights": {"GOES": 0.60, "Copper": 0.30, "Aluminum": 0.10},
+            "windows": {"GOES": "monthly_avg", "Copper": "3m_avg", "Aluminum": "3m_avg"},
+            "review_cadence": "quarterly",
+            "trigger_threshold_pct": 2.5,
+            "cap_pct": null,
+            "floor_pct": null,
+            "indices": {"GOES": "CRU_GOES_Index", "Copper": "LME_Cu_Cash", "Aluminum": "LME_Al_Cash"}
+          }
+        },
+        {
+          "clause_type": "heavy_lift",
+          "references_commodities": [],
+          "text": "Clause 14 — Heavy-Lift Ocean Carriage. Seller shall procure dedicated heavy-lift vessel capacity for each Unit. Acceptable vessel classes: BigLift, Jumbo, COSCO Heavy Transport, AAL. Where no heavy-lift slot is available within ninety (90) days of factory FAT, Seller may request a delay extension which Buyer shall not unreasonably withhold. All heavy-lift freight, port handling, lashing, and marine insurance costs are included in the Unit Price up to a benchmark of two hundred thousand US dollars ($200,000) per Unit; excess costs are subject to a 50/50 split between the parties.",
+          "parsed_params": {
+            "vessel_classes_accepted": ["BigLift", "Jumbo", "COSCO_Heavy_Transport", "AAL"],
+            "delay_extension_threshold_days": 90,
+            "benchmark_freight_usd_per_unit": 200000,
+            "excess_split": {"buyer": 0.50, "seller": 0.50}
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Clause 22 — Force Majeure (Korean Shipyard Carve-Out). In addition to standard Force Majeure events, the parties expressly acknowledge that capacity constraints at Korean heavy-lift shipyards (including but not limited to STX Heavy Industries and Sungdong Shipbuilding) directly affecting vessel availability for the Ludvika–Norfolk route shall constitute Force Majeure if documented by Seller. Notification: 72 hours. Termination right: after 120 consecutive days.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "korean_shipyard_capacity", "yards": ["STX_Heavy_Industries", "Sungdong"], "applies_to": "vessel_availability"}
+            ],
+            "notification_hours": 72,
+            "termination_threshold_days": 120
+          }
+        },
+        {
+          "clause_type": "slot",
+          "references_commodities": [],
+          "text": "Clause 6 — Slot Reservation. Buyer holds eight (8) production slots per Contract Year at Ludvika, with quarterly distribution. Given the bespoke nature of HVDC converter transformers and a global lead time exceeding two (2) years, slot release notice must be provided no less than three hundred sixty-five (365) days in advance. Forfeit fee for unused slots: 20% of Unit Price.",
+          "parsed_params": {
+            "annual_slot_count": 8,
+            "facilities": ["Hitachi Ludvika"],
+            "release_notice_days": 365,
+            "forfeit_fee_pct": 20.0
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Clause 9 — Delivery Basis. CIF Norfolk, Virginia (Incoterms 2020). Inland US transportation from Norfolk to named site is Buyer's responsibility under separate logistics arrangement.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "CIF",
+            "named_place_type": "destination_port",
+            "named_place": "Norfolk",
+            "inland_responsibility": "buyer"
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-004",
+      "supplier_name": "Hyundai Electric",
+      "category": "Power_Transformer_Large",
+      "start_date": "2025-03-01",
+      "end_date": "2027-02-28",
+      "total_value_usd": 165000000,
+      "metadata": {
+        "voltage_classes": ["138kV", "230kV"],
+        "annual_volume_units": 18,
+        "pricing_model": "fixed_with_escalation_trigger",
+        "currency": "USD",
+        "manufacturing_plants": ["Hyundai Ulsan"],
+        "delivery_basis": "FOB Busan"
+      },
+      "clauses": [
+        {
+          "clause_type": "escalation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Section 8 — Fixed Price with Escalation Trigger. Unit Price is fixed for the duration of the Contract. However, where the weighted basket of underlying materials (0.45 GOES, 0.35 Cu, 0.20 Al, each measured as 6-month rolling average vs Q1 2024 baseline) moves more than five percent (5.0%) in either direction, either party may invoke a one-time re-pricing negotiation. If the parties cannot agree to a new Unit Price within forty-five (45) days, the contract reverts to its original Unit Price plus a flat true-up equal to 50% of the basket movement above the 5% threshold.",
+          "parsed_params": {
+            "weights": {"GOES": 0.45, "Copper": 0.35, "Aluminum": 0.20},
+            "windows": {"GOES": "6m_avg", "Copper": "6m_avg", "Aluminum": "6m_avg"},
+            "trigger_threshold_pct": 5.0,
+            "negotiation_window_days": 45,
+            "fallback_true_up_pct_of_excess": 50.0,
+            "base_period": "Q1_2024"
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Section 17 — Force Majeure (Korean Carve-Outs). Specifically included Force Majeure events: (a) typhoons of Category 3 or stronger making landfall within 200 km of Ulsan or Busan, as documented by KMA; (b) earthquakes of magnitude 6.0 or higher within 300 km of Ulsan, as documented by KMA; (c) port lockouts at Busan exceeding seven (7) consecutive days. Notification: 48 hours. Termination right: 60 days.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "typhoon", "categories": [3, 4, 5], "radius_km": 200, "reference_points": ["Ulsan", "Busan"], "authority": "KMA"},
+              {"type": "earthquake", "min_magnitude": 6.0, "radius_km": 300, "reference_points": ["Ulsan"], "authority": "KMA"},
+              {"type": "port_lockout", "port": "Busan", "min_duration_days": 7}
+            ],
+            "notification_hours": 48,
+            "termination_threshold_days": 60
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Section 11 — Liquidated Damages. Fifty thousand US dollars ($50,000) per Unit per week of delay beyond the agreed Delivery Date, with a cap of 500,000 USD per Unit. Three-week cure period.",
+          "parsed_params": {
+            "rate_usd_per_unit_per_week": 50000,
+            "cap_usd_per_unit": 500000,
+            "cure_period_weeks": 3
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Section 9 — Delivery Basis. FOB Busan (Incoterms 2020). Buyer arranges ocean carriage from Busan to US destination port and bears all freight, marine insurance, and inland transportation cost.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "FOB",
+            "named_place_type": "origin_port",
+            "named_place": "Busan",
+            "inland_responsibility": "buyer",
+            "ocean_responsibility": "buyer"
+          }
+        },
+        {
+          "clause_type": "heavy_lift",
+          "references_commodities": [],
+          "text": "Section 14 — Heavy-Lift Pre-Carriage at Origin. Seller is responsible for inland pre-carriage from Ulsan plant to Busan port at Seller's cost. Loading on board the named vessel at Busan is Seller's cost up to Free On Board.",
+          "parsed_params": {
+            "responsibility": "seller",
+            "scope": ["plant_to_origin_port", "loading_fob"],
+            "origin_port": "Busan"
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-005",
+      "supplier_name": "Hyosung Heavy Industries",
+      "category": "Power_Transformer_Spot_OneOff",
+      "start_date": "2026-01-15",
+      "end_date": "2027-04-30",
+      "total_value_usd": 32000000,
+      "metadata": {
+        "voltage_classes": ["765kV"],
+        "annual_volume_units": 1,
+        "pricing_model": "fixed_price_premium_spot",
+        "currency": "USD",
+        "manufacturing_plants": ["Hyosung Changwon"],
+        "delivery_basis": "DAP buyer substation (US)",
+        "notes": "Single-unit spot premium for compressed 62-week lead time against industry standard 100+ weeks"
+      },
+      "clauses": [
+        {
+          "clause_type": "escalation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Article 7 — Limited Escalation. Unit Price is fixed at thirty-two million US dollars ($32,000,000) inclusive of all freight and inland logistics. Escalation applies only in the case of extreme commodity movement: where the basket (0.45 GOES, 0.35 Cu, 0.20 Al, 3-month rolling vs PO date) moves more than ten percent (10%) in either direction, the excess beyond 10% is shared equally between the parties.",
+          "parsed_params": {
+            "weights": {"GOES": 0.45, "Copper": 0.35, "Aluminum": 0.20},
+            "windows": {"GOES": "3m_avg", "Copper": "3m_avg", "Aluminum": "3m_avg"},
+            "trigger_threshold_pct": 10.0,
+            "excess_split": {"buyer": 0.50, "seller": 0.50},
+            "base_period": "PO_date"
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Article 11 — Liquidated Damages Tied to Commissioning. Given that this Unit is the critical interconnection asset for the named substation, LDs are tied to commissioning readiness rather than delivery alone: Two hundred thousand US dollars ($200,000) per calendar week of delay beyond the commissioning-ready date of 30 April 2027, with no cap. Cure period: one (1) week.",
+          "parsed_params": {
+            "trigger_event": "commissioning_ready",
+            "trigger_date": "2027-04-30",
+            "rate_usd_per_week": 200000,
+            "cap_usd": null,
+            "cure_period_weeks": 1
+          }
+        },
+        {
+          "clause_type": "heavy_lift",
+          "references_commodities": [],
+          "text": "Article 14 — Dedicated Heavy-Lift Vessel. Seller shall charter a dedicated heavy-lift vessel of class BigLift Goliath or equivalent for ocean carriage Busan→Norfolk. Inland US route survey, permits, and bridge load studies are included in the Unit Price. Buyer to provide site readiness (foundation, oil filling area, primary connections) per the agreed Site Readiness Schedule. Failure of Buyer site readiness shall shift commissioning LD risk to Buyer.",
+          "parsed_params": {
+            "vessel_class": "BigLift_Goliath_or_equivalent",
+            "responsibility": "seller",
+            "scope": ["ocean", "inland", "route_survey", "permits", "bridge_studies"],
+            "buyer_site_readiness_required": true
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Article 9 — Delivery Basis. DAP buyer substation (Incoterms 2020). Risk transfers on arrival at named substation in commissionable condition.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "DAP",
+            "named_place_type": "buyer_site",
+            "risk_transfer": "arrival_in_commissionable_condition"
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Article 22 — Force Majeure. Standard provisions per Korean industry convention with carve-outs for typhoons (Cat 3+) and earthquakes (M6+) within 200 km of Changwon, and port lockouts at Busan exceeding 5 days. Given the criticality of the single-unit asset and tight commissioning window, the termination-right window is shortened to forty-five (45) consecutive days of continuous Force Majeure event.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "typhoon", "categories": [3, 4, 5], "radius_km": 200, "reference_points": ["Changwon"]},
+              {"type": "earthquake", "min_magnitude": 6.0, "radius_km": 200, "reference_points": ["Changwon"]},
+              {"type": "port_lockout", "port": "Busan", "min_duration_days": 5}
+            ],
+            "notification_hours": 24,
+            "termination_threshold_days": 45
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-006",
+      "supplier_name": "Eaton",
+      "category": "Power_Transformer_Distribution",
+      "start_date": "2025-01-01",
+      "end_date": "2026-12-31",
+      "total_value_usd": 48000000,
+      "metadata": {
+        "voltage_classes": ["34.5kV", "69kV"],
+        "annual_volume_units": 240,
+        "pricing_model": "indexed_quarterly_cu_al",
+        "currency": "USD",
+        "manufacturing_plants": ["Eaton Waukesha"],
+        "delivery_basis": "DAP buyer substation (continental US)",
+        "notes": "Smaller distribution-grade units; no GOES exposure (NGOES design)"
+      },
+      "clauses": [
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["Copper", "Aluminum"],
+          "text": "Section 6 — Quarterly Price Recalculation. Unit prices are recalculated each calendar quarter based on: Δ_basket = 0.65 × Δ_Cu + 0.35 × Δ_Al. References: LME Cu Cash (1-month rolling), LME Al Cash (1-month rolling), both compared to the immediately preceding quarter's average. No trigger threshold — all movements pass through. Notice provided fifteen (15) days before the start of each new quarter.",
+          "parsed_params": {
+            "weights": {"Copper": 0.65, "Aluminum": 0.35},
+            "windows": {"Copper": "1m_avg", "Aluminum": "1m_avg"},
+            "review_cadence": "quarterly",
+            "trigger_threshold_pct": 0.0,
+            "base_period": "rolling_previous_quarter",
+            "notice_period_days": 15,
+            "indices": {"Copper": "LME_Cu_Cash", "Aluminum": "LME_Al_Cash"}
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Section 11 — Liquidated Damages. 0.10% of total Order Value per week of delay, capped at 5%. Cure period: one (1) week.",
+          "parsed_params": {
+            "rate_pct_per_week": 0.10,
+            "cap_pct_of_order_value": 5.0,
+            "cure_period_weeks": 1
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Section 9 — Delivery Basis. DAP buyer substation per individual Purchase Order. Domestic US shipment; standard inland trucking.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "DAP",
+            "named_place_type": "buyer_site",
+            "domestic_only": true
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Section 17 — Force Majeure. Standard domestic Force Majeure: severe weather events at named Waukesha facility, regional grid outages exceeding 48 hours, and federal trade actions affecting copper imports exceeding 20% ad valorem. Notification within 96 hours.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "severe_weather", "location": "Waukesha"},
+              {"type": "grid_outage", "min_duration_hours": 48},
+              {"type": "trade_action", "commodities": ["Copper"], "threshold_pct": 20.0}
+            ],
+            "notification_hours": 96
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-007",
+      "supplier_name": "Mitsubishi Electric",
+      "category": "Power_Transformer_Large",
+      "start_date": "2025-06-01",
+      "end_date": "2028-05-31",
+      "total_value_usd": 75000000,
+      "metadata": {
+        "voltage_classes": ["230kV", "345kV"],
+        "annual_volume_units": 4,
+        "pricing_model": "option_with_reservation_fee",
+        "currency": "USD",
+        "manufacturing_plants": ["Mitsubishi Ako"],
+        "delivery_basis": "DAP buyer site (US)",
+        "notes": "Backup-supplier option contract: Buyer pays reservation fee for capacity, exercises slot when needed"
+      },
+      "clauses": [
+        {
+          "clause_type": "slot",
+          "references_commodities": [],
+          "text": "Article 6 — Reserved Capacity Option. Buyer reserves up to four (4) production slots per Contract Year, payable as an Annual Reservation Fee of seven hundred fifty thousand US dollars ($750,000) per slot, irrespective of exercise. To exercise a slot, Buyer issues a Call Notice no later than ninety (90) days before the requested production-start date. Unexercised slots may not roll forward. Slot calls in any single calendar quarter are capped at two (2) units.",
+          "parsed_params": {
+            "annual_slot_count": 4,
+            "reservation_fee_usd_per_slot": 750000,
+            "call_notice_days": 90,
+            "rollforward": false,
+            "quarterly_call_cap": 2
+          }
+        },
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Article 7 — On-Call Pricing. When a slot is exercised, the per-Unit price is calculated as the Reference Price ($18,500,000 base) multiplied by the indexation factor: 1 + 0.45 × Δ_GOES + 0.35 × Δ_Cu + 0.20 × Δ_Al, where Δs are 3-month rolling averages vs the Call Notice date. No cap or floor.",
+          "parsed_params": {
+            "reference_price_usd_per_unit": 18500000,
+            "weights": {"GOES": 0.45, "Copper": 0.35, "Aluminum": 0.20},
+            "windows": {"GOES": "3m_avg", "Copper": "3m_avg", "Aluminum": "3m_avg"},
+            "base_period": "call_notice_date",
+            "trigger_threshold_pct": 0.0
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Article 22 — Force Majeure (Japan-Specific). Earthquakes of M6.5+ within 300 km of Ako (JMA-documented), tsunamis affecting the Seto Inland Sea region, and prefectural-level evacuation orders affecting Hyogo Prefecture all constitute Force Majeure. Notification: 48 hours. The Annual Reservation Fee for any year materially affected by Force Majeure shall be prorated.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "earthquake", "min_magnitude": 6.5, "radius_km": 300, "reference_points": ["Ako"], "authority": "JMA"},
+              {"type": "tsunami", "region": "Seto_Inland_Sea"},
+              {"type": "evacuation_order", "prefecture": "Hyogo"}
+            ],
+            "notification_hours": 48,
+            "reservation_fee_prorated_on_fm": true
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Article 11 — Liquidated Damages on Exercised Slots. For any Unit on an exercised slot, LDs of 0.15% of Unit Price per week of delay, capped at 8%. No LDs apply to slots not exercised.",
+          "parsed_params": {
+            "rate_pct_per_week": 0.15,
+            "cap_pct_of_unit_price": 8.0,
+            "applies_to": "exercised_slots_only"
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "CIS-2026-008",
+      "supplier_name": "WEG",
+      "category": "Power_Transformer_Large",
+      "start_date": "2025-09-01",
+      "end_date": "2027-08-31",
+      "total_value_usd": 96000000,
+      "metadata": {
+        "voltage_classes": ["138kV", "230kV"],
+        "annual_volume_units": 14,
+        "pricing_model": "indexed_with_fx_passthrough",
+        "currency": "USD",
+        "manufacturing_plants": ["WEG Blumenau"],
+        "delivery_basis": "DAP buyer site (US)",
+        "notes": "LATAM diversification supplier; pricing in USD with explicit BRL/USD FX adjustment"
+      },
+      "clauses": [
+        {
+          "clause_type": "indexation",
+          "references_commodities": ["GOES", "Copper", "Aluminum"],
+          "text": "Clause 8 — Combined Materials + FX Adjustment. Adjusted Price = Base Price × (1 + Δ_basket) × (1 + α × Δ_FX), where: Δ_basket = 0.45 × Δ_GOES + 0.35 × Δ_Cu + 0.20 × Δ_Al (3-month rolling), Δ_FX = percent change in BRL/USD spot from the Base Reference Period (Q1 2024 average), and α = 0.40 (the labor-component pass-through coefficient). Adjustment cadence: quarterly. Trigger threshold: 4% on Δ_basket OR 6% on Δ_FX.",
+          "parsed_params": {
+            "weights": {"GOES": 0.45, "Copper": 0.35, "Aluminum": 0.20},
+            "windows": {"GOES": "3m_avg", "Copper": "3m_avg", "Aluminum": "3m_avg"},
+            "fx_pair": "BRL_USD",
+            "fx_alpha_coefficient": 0.40,
+            "review_cadence": "quarterly",
+            "trigger_threshold_pct": 4.0,
+            "fx_trigger_threshold_pct": 6.0,
+            "base_period": "Q1_2024"
+          }
+        },
+        {
+          "clause_type": "heavy_lift",
+          "references_commodities": [],
+          "text": "Clause 14 — Heavy-Lift Ocean Carriage. Seller responsible for all ocean carriage Santos→US East Coast (Norfolk, Savannah, or Houston) and inland US delivery to named site. Heavy-lift freight is a pass-through cost capped at one hundred fifty thousand US dollars ($150,000) per Unit; excess is split 70% Buyer / 30% Seller.",
+          "parsed_params": {
+            "responsibility": "seller",
+            "origin_port": "Santos",
+            "destination_ports": ["Norfolk", "Savannah", "Houston"],
+            "benchmark_freight_usd_per_unit": 150000,
+            "excess_split": {"buyer": 0.70, "seller": 0.30}
+          }
+        },
+        {
+          "clause_type": "force_majeure",
+          "references_commodities": [],
+          "text": "Clause 22 — Force Majeure (Brazil-Specific). Specifically included: (a) general strikes affecting the Port of Santos exceeding seven (7) consecutive days; (b) federal-level industrial action authorized by CUT or Força Sindical affecting Seller's Blumenau workforce; (c) Amazonian or southern-state extreme weather events disrupting domestic logistics for more than five (5) days. Notification: 96 hours.",
+          "parsed_params": {
+            "carveouts_included": [
+              {"type": "port_strike", "port": "Santos", "min_duration_days": 7},
+              {"type": "national_industrial_action", "regions": ["BR"], "applies_to": "seller_plant"},
+              {"type": "severe_weather", "regions": ["BR"], "min_duration_days": 5}
+            ],
+            "notification_hours": 96
+          }
+        },
+        {
+          "clause_type": "ld",
+          "references_commodities": [],
+          "text": "Clause 11 — Liquidated Damages. 0.20% of Unit Price per week of delay, capped at 10%. Two-week cure period.",
+          "parsed_params": {
+            "rate_pct_per_week": 0.20,
+            "cap_pct_of_unit_price": 10.0,
+            "cure_period_weeks": 2
+          }
+        },
+        {
+          "clause_type": "incoterms",
+          "references_commodities": [],
+          "text": "Clause 9 — Delivery Basis. DAP buyer site (Incoterms 2020). Seller responsible end-to-end.",
+          "parsed_params": {
+            "incoterms_version": "2020",
+            "rule": "DAP",
+            "named_place_type": "buyer_site"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "_meta": {
+    "version": "2026.05",
+    "category": "Power_Transformer_Large",
+    "owner": "Category Manager — Power Transformers",
+    "review_cadence": "quarterly",
+    "note": "Loaded as context by ingestion and assessment agents. Update this file (not the prompts) to change the category lens."
+  },
+  "category_definition": {
+    "primary": "Large power transformers ≥ 100 MVA, three-phase, oil-filled, voltage classes 138 kV through 800 kV",
+    "in_scope_sub_categories": [
+      "Power_Transformer_Large",
+      "Power_Transformer_GSU",
+      "Power_Transformer_HVDC_Converter"
+    ],
+    "out_of_scope": [
+      "Distribution transformers < 100 MVA (handled by Eaton/Hubbell adjacent contracts)",
+      "Dry-type transformers",
+      "Pad-mount and pole-mount units"
+    ]
+  },
+  "strategic_priorities_2026": [
+    {
+      "priority": "lead_time_compression",
+      "rationale": "Industry lead times have grown from ~50 weeks pre-2020 to 100+ weeks. Hyperscaler datacenter and IRA grid demand is straining capacity.",
+      "target_metric": "Average new-order lead time ≤ 90 weeks by Q4 2026"
+    },
+    {
+      "priority": "supply_geographic_diversification",
+      "rationale": "Korean and Japanese tier-1 OEMs hold ~60% of large-power market share, exposing us to APAC weather, port, and geopolitical risk.",
+      "target_metric": "No single country-of-origin > 45% of annual contracted volume"
+    },
+    {
+      "priority": "goes_supply_security",
+      "rationale": "Grain-oriented electrical steel is the critical bottleneck. Only ~6 mills globally; US domestic supply (Cleveland-Cliffs) is limited.",
+      "target_metric": "≥ 2 named GOES sub-tier suppliers per tier-1 contract"
+    },
+    {
+      "priority": "indexation_discipline",
+      "rationale": "Fixed-price contracts without indexation transfer all commodity risk to seller, who responds with risk premium. Indexation lowers headline price.",
+      "target_metric": "≥ 80% of new-contract value under indexation clauses with documented index references"
+    },
+    {
+      "priority": "slot_reservation_for_critical_assets",
+      "rationale": "Given 100+ week backlog, slot reservation is itself a contractual asset. Failure to reserve is loss of optionality.",
+      "target_metric": "≥ 90% of forecasted demand covered by reserved slots 18 months forward"
+    }
+  ],
+  "approved_suppliers": {
+    "tier_1_preferred": [
+      "Siemens Energy",
+      "Hitachi Energy",
+      "GE Vernova",
+      "Hyundai Electric",
+      "Hyosung Heavy Industries"
+    ],
+    "tier_1_qualified": [
+      "Mitsubishi Electric",
+      "WEG",
+      "CG Power",
+      "BHEL"
+    ],
+    "adjacent": ["Eaton", "Hubbell"],
+    "blocked": [],
+    "under_qualification": []
+  },
+  "geographic_exposure_caps": {
+    "South Korea": 0.40,
+    "Japan": 0.20,
+    "Germany_Austria_combined": 0.30,
+    "United States": 0.30,
+    "China": 0.10,
+    "India": 0.15,
+    "Brazil": 0.15
+  },
+  "bom_exposure": {
+    "GOES_pct_of_unit_cost": 0.28,
+    "Copper_pct_of_unit_cost": 0.18,
+    "Aluminum_pct_of_unit_cost": 0.06,
+    "Mineral_Oil_pct_of_unit_cost": 0.04,
+    "Bushings_pct_of_unit_cost": 0.05,
+    "Tap_Changers_pct_of_unit_cost": 0.04,
+    "Labor_pct_of_unit_cost": 0.20,
+    "Other_pct_of_unit_cost": 0.15
+  },
+  "critical_logistics_routes": [
+    {
+      "lane": "Korea_USEC",
+      "ports": ["Busan", "Norfolk", "Savannah"],
+      "annual_volume_units": 32,
+      "risk_factors": ["typhoons (Aug-Oct)", "Busan congestion", "heavy-lift vessel availability"]
+    },
+    {
+      "lane": "Japan_USEC",
+      "ports": ["Yokohama", "Norfolk"],
+      "annual_volume_units": 4,
+      "risk_factors": ["earthquakes", "typhoons"]
+    },
+    {
+      "lane": "Korea_EU_NorthSea",
+      "ports": ["Busan", "Antwerp", "Rotterdam", "Bremerhaven"],
+      "annual_volume_units": 0,
+      "risk_factors": ["Suez or Panama exposure (route choice)"],
+      "note": "Currently zero volume — US-direct only"
+    },
+    {
+      "lane": "EU_USEC",
+      "ports": ["Hamburg", "Bremerhaven", "Norfolk", "Savannah"],
+      "annual_volume_units": 22,
+      "risk_factors": ["winter North Sea weather"]
+    },
+    {
+      "lane": "Brazil_USEC",
+      "ports": ["Santos", "Houston", "Norfolk"],
+      "annual_volume_units": 14,
+      "risk_factors": ["Santos labor", "BRL/USD volatility"]
+    }
+  ],
+  "demand_outlook_24_months": {
+    "hyperscaler_datacenter_units": 38,
+    "ira_grid_modernization_units": 26,
+    "industrial_replacement_units": 14,
+    "renewable_integration_units": 9,
+    "total_units": 87,
+    "vs_prior_24_months_pct_change": 0.34
+  },
+  "key_indices_watched": {
+    "GOES": "CRU Group Grain-Oriented Electrical Steel Index",
+    "Copper": "LME Copper Cash Settlement",
+    "Aluminum": "LME Aluminum Cash Settlement",
+    "Crude_Oil_Freight_Proxy": "WTI Crude (CL=F)",
+    "Bulk_Shipping_Tightness": "Baltic Dry Index (^BDI)"
+  },
+  "category_manager_decision_thresholds": {
+    "indexation_trigger_review_pct": 3.0,
+    "supplier_concentration_alert_pct": 45.0,
+    "lead_time_alert_weeks": 110,
+    "port_congestion_alert_pct_above_baseline": 50.0,
+    "single_supplier_exposure_cap_pct_of_annual_spend": 35.0
+  }
+}

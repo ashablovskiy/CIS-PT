@@ -1,3 +1,8 @@
 packages:
   - "apps/web"
   - "packages/*"
+
+# Build scripts pnpm should NOT execute for security/reproducibility.
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

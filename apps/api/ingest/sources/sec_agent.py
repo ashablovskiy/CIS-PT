@@ -60,7 +60,11 @@ class SecAgent(BaseIngestionAgent):
         return 4
 
     def keyword_rules(self) -> list[str]:
-        return POWER_KEYWORDS
+        try:
+            from apps.api.ingest.keyword_registry import registry
+            return registry.get("sec") or POWER_KEYWORDS
+        except Exception:
+            return POWER_KEYWORDS
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
     async def _fetch_submissions(self, client: httpx.AsyncClient, cik: str) -> dict:

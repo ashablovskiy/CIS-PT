@@ -14,16 +14,29 @@ from __future__ import annotations
 # ─────────────────────────────────────────────────────────────────────────────
 
 COMMODITIES: list[dict] = [
-    {"name": "GOES", "full_name": "Grain-Oriented Electrical Steel", "ticker_proxy": "HRC=F", "category": "ferrous"},
-    {"name": "Copper", "full_name": "Copper", "ticker_proxy": "HG=F", "category": "non_ferrous"},
-    {"name": "Aluminum", "full_name": "Aluminum", "ticker_proxy": "ALI=F", "category": "non_ferrous"},
-    {"name": "Mineral_Oil", "full_name": "Transformer Mineral Oil", "ticker_proxy": "CL=F", "category": "petrochemical"},
-    {"name": "Ester_Fluid", "full_name": "Natural/Synthetic Ester Insulating Fluid", "ticker_proxy": None, "category": "biofluid"},
-    {"name": "Porcelain", "full_name": "High-Voltage Porcelain (Bushings)", "ticker_proxy": None, "category": "ceramic"},
-    {"name": "Composite_Bushing_Polymer", "full_name": "Silicone Composite (Bushings)", "ticker_proxy": None, "category": "polymer"},
-    {"name": "Crude_Oil_Freight", "full_name": "Bunker Fuel Proxy", "ticker_proxy": "CL=F", "category": "freight_input"},
-    {"name": "Lumber_Crating", "full_name": "Heavy-Lift Crating Lumber", "ticker_proxy": None, "category": "logistics_input"},
-    {"name": "Silicon_Steel_NGOES", "full_name": "Non-Grain-Oriented Electrical Steel (smaller units)", "ticker_proxy": "HRC=F", "category": "ferrous"},
+    {"name": "GOES", "full_name": "Grain-Oriented Electrical Steel", "ticker_proxy": "HRC=F", "category": "ferrous",
+     "aliases": ["grain-oriented electrical steel", "grain oriented steel", "electrical steel", "GOES strip",
+                 "transformer steel", "silicon steel", "M3 steel", "M4 steel", "oriented electrical steel"]},
+    {"name": "Copper", "full_name": "Copper", "ticker_proxy": "HG=F", "category": "non_ferrous",
+     "aliases": ["copper cathode", "copper rod", "copper wire", "CTC conductor", "copper winding",
+                 "HG=F", "copper futures", "electrolytic copper"]},
+    {"name": "Aluminum", "full_name": "Aluminum", "ticker_proxy": "ALI=F", "category": "non_ferrous",
+     "aliases": ["aluminium", "aluminum strip", "aluminum winding", "ALI=F", "aluminum futures",
+                 "EC-grade aluminum", "1350 aluminum"]},
+    {"name": "Mineral_Oil", "full_name": "Transformer Mineral Oil", "ticker_proxy": "CL=F", "category": "petrochemical",
+     "aliases": ["transformer oil", "insulating oil", "dielectric oil", "naphthenic oil"]},
+    {"name": "Ester_Fluid", "full_name": "Natural/Synthetic Ester Insulating Fluid", "ticker_proxy": None, "category": "biofluid",
+     "aliases": ["ester oil", "natural ester", "synthetic ester", "FR3", "Midel", "fire-safe fluid"]},
+    {"name": "Porcelain", "full_name": "High-Voltage Porcelain (Bushings)", "ticker_proxy": None, "category": "ceramic",
+     "aliases": ["ceramic bushing", "porcelain bushing", "HV bushing", "high voltage bushing"]},
+    {"name": "Composite_Bushing_Polymer", "full_name": "Silicone Composite (Bushings)", "ticker_proxy": None, "category": "polymer",
+     "aliases": ["silicone bushing", "composite bushing", "polymer bushing", "RIP bushing"]},
+    {"name": "Crude_Oil_Freight", "full_name": "Bunker Fuel Proxy", "ticker_proxy": "CL=F", "category": "freight_input",
+     "aliases": ["bunker fuel", "VLSFO", "marine fuel", "shipping fuel", "CL=F"]},
+    {"name": "Lumber_Crating", "full_name": "Heavy-Lift Crating Lumber", "ticker_proxy": None, "category": "logistics_input",
+     "aliases": ["timber", "heavy lift crating", "breakbulk crating", "wooden crating"]},
+    {"name": "Silicon_Steel_NGOES", "full_name": "Non-Grain-Oriented Electrical Steel (smaller units)", "ticker_proxy": "HRC=F", "category": "ferrous",
+     "aliases": ["NGOES", "non-oriented electrical steel", "NOES", "silicon steel non-oriented"]},
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,28 +84,91 @@ COUNTRIES: list[dict] = [
 
 SUPPLIERS: list[dict] = [
     # Tier-1 large-power transformer manufacturers
-    {"name": "Siemens Energy", "tier": 1, "type": "transformer_oem", "hq_country": "DE", "sec_cik": None},
-    {"name": "Hitachi Energy", "tier": 1, "type": "transformer_oem", "hq_country": "CH", "sec_cik": None},
-    {"name": "GE Vernova", "tier": 1, "type": "transformer_oem", "hq_country": "US", "sec_cik": "1993009"},
-    {"name": "Hyundai Electric", "tier": 1, "type": "transformer_oem", "hq_country": "KR", "sec_cik": None},
-    {"name": "Hyosung Heavy Industries", "tier": 1, "type": "transformer_oem", "hq_country": "KR", "sec_cik": None},
-    {"name": "Mitsubishi Electric", "tier": 1, "type": "transformer_oem", "hq_country": "JP", "sec_cik": None},
-    {"name": "WEG", "tier": 1, "type": "transformer_oem", "hq_country": "BR", "sec_cik": None},
-    {"name": "CG Power", "tier": 1, "type": "transformer_oem", "hq_country": "IN", "sec_cik": None},
-    {"name": "BHEL", "tier": 1, "type": "transformer_oem", "hq_country": "IN", "sec_cik": None},
+    {
+        "name": "Siemens Energy", "tier": 1, "type": "transformer_oem", "hq_country": "DE", "sec_cik": None,
+        "aliases": ["Siemens-Energy", "Siemens Energy AG", "siemens energy"],
+    },
+    {
+        "name": "Hitachi Energy", "tier": 1, "type": "transformer_oem", "hq_country": "CH", "sec_cik": None,
+        # Formed from ABB's power grids division in 2020; older articles use legacy names
+        "aliases": ["Hitachi ABB Power Grids", "ABB Power Grids", "Hitachi-ABB", "日立エナジー"],
+    },
+    {
+        "name": "GE Vernova", "tier": 1, "type": "transformer_oem", "hq_country": "US", "sec_cik": "1993009",
+        # Spun out of GE in April 2024; older press still uses legacy names
+        "aliases": ["GE Grid Solutions", "General Electric Grid", "GEV", "GE Power"],
+    },
+    {
+        "name": "Hyundai Electric", "tier": 1, "type": "transformer_oem", "hq_country": "KR", "sec_cik": None,
+        "aliases": ["Hyundai Electric & Energy", "현대일렉트릭", "Hyundai Heavy Industries Electric"],
+    },
+    {
+        "name": "Hyosung Heavy Industries", "tier": 1, "type": "transformer_oem", "hq_country": "KR", "sec_cik": None,
+        "aliases": ["Hyosung", "Hyosung HS", "효성중공업", "효성", "HSHI"],
+    },
+    {
+        "name": "Mitsubishi Electric", "tier": 1, "type": "transformer_oem", "hq_country": "JP", "sec_cik": None,
+        "aliases": ["MELCO", "三菱電機", "Mitsubishi Electric Power Products"],
+    },
+    {
+        "name": "WEG", "tier": 1, "type": "transformer_oem", "hq_country": "BR", "sec_cik": None,
+        "aliases": ["WEG S.A.", "WEG Industries", "WEG Electric"],
+    },
+    {
+        "name": "CG Power", "tier": 1, "type": "transformer_oem", "hq_country": "IN", "sec_cik": None,
+        "aliases": ["CG Power and Industrial Solutions", "Crompton Greaves", "CG Industrial"],
+    },
+    {
+        "name": "BHEL", "tier": 1, "type": "transformer_oem", "hq_country": "IN", "sec_cik": None,
+        "aliases": ["Bharat Heavy Electricals", "Bharat Heavy Electricals Limited"],
+    },
     # Adjacent power-equipment SEC filers
-    {"name": "Eaton", "tier": 1, "type": "power_equipment_adjacent", "hq_country": "US", "sec_cik": "31277"},
-    {"name": "Hubbell", "tier": 1, "type": "power_equipment_adjacent", "hq_country": "US", "sec_cik": "48898"},
+    {
+        "name": "Eaton", "tier": 1, "type": "power_equipment_adjacent", "hq_country": "US", "sec_cik": "31277",
+        "aliases": ["Eaton Corporation", "Eaton Electrical", "Eaton Waukesha"],
+    },
+    {
+        "name": "Hubbell", "tier": 1, "type": "power_equipment_adjacent", "hq_country": "US", "sec_cik": "48898",
+        "aliases": ["Hubbell Incorporated", "Hubbell Power Systems"],
+    },
     # Tier-2 GOES mills
-    {"name": "Nippon Steel", "tier": 2, "type": "goes_mill", "hq_country": "JP", "sec_cik": None},
-    {"name": "JFE Steel", "tier": 2, "type": "goes_mill", "hq_country": "JP", "sec_cik": None},
-    {"name": "POSCO", "tier": 2, "type": "goes_mill", "hq_country": "KR", "sec_cik": None},
-    {"name": "Baosteel", "tier": 2, "type": "goes_mill", "hq_country": "CN", "sec_cik": None},
-    {"name": "Stalprodukt", "tier": 2, "type": "goes_mill", "hq_country": "PL", "sec_cik": None},
-    {"name": "Cleveland-Cliffs", "tier": 2, "type": "goes_mill", "hq_country": "US", "sec_cik": "764065"},
+    {
+        "name": "Nippon Steel", "tier": 2, "type": "goes_mill", "hq_country": "JP", "sec_cik": None,
+        # Merged with Sumitomo Metal in 2012; formerly Nippon Steel & Sumitomo Metal (NSSMC)
+        "aliases": ["NSSMC", "Nippon Steel Corporation", "新日鐵住金", "NSC", "Nippon Steel & Sumitomo Metal"],
+    },
+    {
+        "name": "JFE Steel", "tier": 2, "type": "goes_mill", "hq_country": "JP", "sec_cik": None,
+        # Formed from Kawasaki Steel + NKK merger in 2002
+        "aliases": ["JFE", "Kawasaki Steel", "NKK", "Japan Fe Steel", "JFEスチール"],
+    },
+    {
+        "name": "POSCO", "tier": 2, "type": "goes_mill", "hq_country": "KR", "sec_cik": None,
+        "aliases": ["POSCO Holdings", "포스코", "Pohang Iron and Steel", "POSCO International"],
+    },
+    {
+        "name": "Baosteel", "tier": 2, "type": "goes_mill", "hq_country": "CN", "sec_cik": None,
+        # Part of China Baowu Steel Group since 2016
+        "aliases": ["Baoshan Iron & Steel", "China Baowu", "宝钢", "Baowu Steel", "Bao Steel"],
+    },
+    {
+        "name": "Stalprodukt", "tier": 2, "type": "goes_mill", "hq_country": "PL", "sec_cik": None,
+        "aliases": ["Stalprodukt Bochnia", "SPE", "Stalprodukt S.A."],
+    },
+    {
+        "name": "Cleveland-Cliffs", "tier": 2, "type": "goes_mill", "hq_country": "US", "sec_cik": "764065",
+        # Acquired AK Steel (main US GOES producer) in 2020
+        "aliases": ["Cliffs", "AK Steel", "Cleveland Cliffs", "CLF"],
+    },
     # Tier-2 sub-components
-    {"name": "Reinhausen", "tier": 2, "type": "tap_changer_oltc", "hq_country": "DE", "sec_cik": None},
-    {"name": "ABB Bushings", "tier": 2, "type": "bushings", "hq_country": "SE", "sec_cik": None},
+    {
+        "name": "Reinhausen", "tier": 2, "type": "tap_changer_oltc", "hq_country": "DE", "sec_cik": None,
+        "aliases": ["MR Reinhausen", "Maschinenfabrik Reinhausen", "MR Group"],
+    },
+    {
+        "name": "ABB Bushings", "tier": 2, "type": "bushings", "hq_country": "SE", "sec_cik": None,
+        "aliases": ["ABB High Voltage Cables", "ABB Components", "Hitachi Energy Bushings"],
+    },
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,16 +220,26 @@ PLANTS: list[dict] = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 PORTS: list[dict] = [
-    {"name": "Busan", "locode": "KRPUS", "country": "KR", "type": "container_breakbulk"},
-    {"name": "Antwerp", "locode": "BEANR", "country": "BE", "type": "heavy_lift_breakbulk"},
-    {"name": "Rotterdam", "locode": "NLRTM", "country": "NL", "type": "heavy_lift_breakbulk"},
-    {"name": "Bremerhaven", "locode": "DEBRV", "country": "DE", "type": "heavy_lift_breakbulk"},
-    {"name": "Hamburg", "locode": "DEHAM", "country": "DE", "type": "container_breakbulk"},
-    {"name": "Savannah", "locode": "USSAV", "country": "US", "type": "container_breakbulk"},
-    {"name": "Norfolk", "locode": "USORF", "country": "US", "type": "heavy_lift_breakbulk"},
-    {"name": "Houston", "locode": "USHOU", "country": "US", "type": "heavy_lift_breakbulk"},
-    {"name": "Yokohama", "locode": "JPYOK", "country": "JP", "type": "container_breakbulk"},
-    {"name": "Santos", "locode": "BRSSZ", "country": "BR", "type": "container_breakbulk"},
+    {"name": "Busan", "locode": "KRPUS", "country": "KR", "type": "container_breakbulk",
+     "aliases": ["Pusan", "Port of Busan", "부산항", "KRPUS"]},
+    {"name": "Antwerp", "locode": "BEANR", "country": "BE", "type": "heavy_lift_breakbulk",
+     "aliases": ["Port of Antwerp", "Antwerpen", "Antwerp-Bruges", "BEANR"]},
+    {"name": "Rotterdam", "locode": "NLRTM", "country": "NL", "type": "heavy_lift_breakbulk",
+     "aliases": ["Port of Rotterdam", "NLRTM"]},
+    {"name": "Bremerhaven", "locode": "DEBRV", "country": "DE", "type": "heavy_lift_breakbulk",
+     "aliases": ["Port of Bremerhaven", "DEBRV"]},
+    {"name": "Hamburg", "locode": "DEHAM", "country": "DE", "type": "container_breakbulk",
+     "aliases": ["Port of Hamburg", "Hamburg Hafen", "DEHAM"]},
+    {"name": "Savannah", "locode": "USSAV", "country": "US", "type": "container_breakbulk",
+     "aliases": ["Port of Savannah", "Garden City Terminal", "USSAV"]},
+    {"name": "Norfolk", "locode": "USORF", "country": "US", "type": "heavy_lift_breakbulk",
+     "aliases": ["Port of Virginia", "Hampton Roads", "Portsmouth", "USORF"]},
+    {"name": "Houston", "locode": "USHOU", "country": "US", "type": "heavy_lift_breakbulk",
+     "aliases": ["Port of Houston", "Bayport", "Barbours Cut", "USHOU"]},
+    {"name": "Yokohama", "locode": "JPYOK", "country": "JP", "type": "container_breakbulk",
+     "aliases": ["Port of Yokohama", "横浜港", "JPYOK"]},
+    {"name": "Santos", "locode": "BRSSZ", "country": "BR", "type": "container_breakbulk",
+     "aliases": ["Port of Santos", "Porto de Santos", "BRSSZ"]},
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -102,12 +102,17 @@ class GdeltAgent(BaseIngestionAgent):
 
     def keyword_rules(self) -> list[str]:
         # GDELT items already go through heavy SQL filtering; rule filter is light.
-        return [
+        _fallback = [
             "transformer", "electrical steel", "goes", "copper", "aluminum",
             "siemens energy", "hitachi energy", "ge vernova", "hyundai",
             "posco", "nippon steel", "busan", "antwerp", "rotterdam",
             "grid", "power", "energy", "manufacturing", "supply chain",
         ]
+        try:
+            from apps.api.ingest.keyword_registry import registry
+            return registry.get("gdelt") or _fallback
+        except Exception:
+            return _fallback
 
     def _build_query(self, window_start: datetime, window_end: datetime) -> str:
         # _PARTITIONTIME works on gkg_partitioned (DAY partitioned by ingestion time).

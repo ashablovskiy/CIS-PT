@@ -80,7 +80,11 @@ class LogisticsAgent(BaseIngestionAgent):
         return 1
 
     def keyword_rules(self) -> list[str]:
-        return LOGISTICS_KEYWORDS
+        try:
+            from apps.api.ingest.keyword_registry import registry
+            return registry.get("logistics") or LOGISTICS_KEYWORDS
+        except Exception:
+            return LOGISTICS_KEYWORDS
 
     async def pull(self, window: tuple[datetime, datetime]) -> list[RawItem]:
         items: list[RawItem] = []

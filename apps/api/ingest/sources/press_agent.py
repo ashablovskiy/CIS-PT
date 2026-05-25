@@ -76,7 +76,11 @@ class PressAgent(BaseIngestionAgent):
         return 2
 
     def keyword_rules(self) -> list[str]:
-        return POWER_KEYWORDS
+        try:
+            from apps.api.ingest.keyword_registry import registry
+            return registry.get("press") or POWER_KEYWORDS
+        except Exception:
+            return POWER_KEYWORDS
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=5))
     async def _fetch_feed(self, client: httpx.AsyncClient, feed_url: str) -> bytes:

@@ -101,7 +101,11 @@ class DemandAgent(BaseIngestionAgent):
         return 4
 
     def keyword_rules(self) -> list[str]:
-        return DEMAND_KEYWORDS
+        try:
+            from apps.api.ingest.keyword_registry import registry
+            return registry.get("demand") or DEMAND_KEYWORDS
+        except Exception:
+            return DEMAND_KEYWORDS
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _fetch_feed(self, client: httpx.AsyncClient, url: str) -> bytes:

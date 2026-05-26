@@ -34,8 +34,25 @@ _AGENT_MAP: dict[str, tuple[str, str]] = {
 
 @router.get("/status")
 async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[dict]:
-    """Return per-source ingestion stats for the last N hours."""
+    """Return per-source ingestion stats for the last N hours.
+
+    All 6 ingestion agents are ALWAYS included in the response — silent
+    agents return zeros + null last_seen so the UI can render their card.
+    """
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
+
+    # Seed with zero-stat entries for every known source so the response is
+    # always exactly len(_SOURCES) rows regardless of activity.
+    by_source: dict[str, dict] = {
+        src: {
+            "source":    src,
+            "total":     0,
+            "escalated": 0,
+            "discarded": 0,
+            "last_seen": None,
+        }
+        for src in _SOURCES
+    }
 
     async with async_session_factory() as session:
         rows = await session.execute(
@@ -47,15 +64,15 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
             .where(Signal.ingested_at >= cutoff)
             .group_by(Signal.source)
         )
-        by_source: dict[str, dict] = {}
         for source, total, last_seen in rows:
-            by_source[source] = {
-                "source": source,
-                "total": total,
-                "last_seen": last_seen.isoformat() if last_seen else None,
-                "escalated": 0,
-                "discarded": 0,
-            }
+            if source not in by_source:
+                # Unknown source seen in DB — surface it anyway
+                by_source[source] = {
+                    "source": source, "total": 0, "escalated": 0,
+                    "discarded": 0, "last_seen": None,
+                }
+            by_source[source]["total"]     = total
+            by_source[source]["last_seen"] = last_seen.isoformat() if last_seen else None
 
         drows = await session.execute(
             select(
@@ -75,7 +92,10 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
             elif decision == "discard":
                 by_source[source]["discarded"] = cnt
 
-        return sorted(by_source.values(), key=lambda x: x["source"])
+    # Preserve canonical _SOURCES ordering (prices, gdelt, logistics, press, demand, sec)
+    return [by_source[src] for src in _SOURCES if src in by_source] + [
+        by_source[src] for src in by_source if src not in _SOURCES
+    ]
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────

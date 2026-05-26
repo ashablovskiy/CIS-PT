@@ -46,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             ))}
           </nav>
           <div className="px-5 py-4 border-t border-slate-700 text-xs text-slate-600">
-            v0.6.0 — Week 6
+            v0.8.0 — Week 8
           </div>
         </aside>
 

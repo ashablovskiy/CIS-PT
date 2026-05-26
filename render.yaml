@@ -1,0 +1,92 @@
+# Render deployment manifest — CIS (Contract Intelligence System)
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Services:
+#   cis-api   — FastAPI backend (Docker)
+#   cis-web   — Next.js frontend (static site)
+#
+# Prerequisites on Render:
+#   1. Connect this repo in the Render dashboard.
+#   2. Add a new "Blueprint" pointing at this render.yaml.
+#   3. Fill in all environment variable values marked as <set-in-dashboard>.
+
+services:
+  # ── FastAPI backend ────────────────────────────────────────────────────────
+  - type: web
+    name: cis-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon
+    plan: starter        # upgrade to standard for production traffic
+    branch: main
+    healthCheckPath: /health
+
+    envVars:
+      # ── Anthropic ──────────────────────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false      # <set-in-dashboard>
+
+      # ── Voyage AI ─────────────────────────────────────────────────────
+      - key: VOYAGE_API_KEY
+        sync: false
+
+      # ── Neon Postgres ─────────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false      # postgresql+asyncpg://...
+      - key: DATABASE_SYNC_URL
+        sync: false      # postgresql+psycopg2://...
+
+      # ── Neo4j AuraDB ──────────────────────────────────────────────────
+      - key: NEO4J_URI
+        sync: false      # neo4j+s://...
+      - key: NEO4J_USERNAME
+        value: neo4j
+      - key: NEO4J_PASSWORD
+        sync: false
+
+      # ── Google Cloud ──────────────────────────────────────────────────
+      - key: GCP_PROJECT_ID
+        sync: false
+      # Note: mount the GCP service-account JSON as a secret file, then set:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/gcp.json
+
+      # ── LangSmith (optional) ──────────────────────────────────────────
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_PROJECT
+        value: cis
+
+      # ── Inngest ───────────────────────────────────────────────────────
+      - key: INNGEST_EVENT_KEY
+        sync: false
+      - key: INNGEST_SIGNING_KEY
+        sync: false
+
+      # ── App ───────────────────────────────────────────────────────────
+      - key: ENVIRONMENT
+        value: production
+      - key: WEB_BASE_URL
+        fromService:
+          type: web
+          name: cis-web
+          property: host
+
+  # ── Next.js frontend ──────────────────────────────────────────────────────
+  - type: web
+    name: cis-web
+    runtime: node
+    region: oregon
+    plan: starter
+    branch: main
+    rootDir: apps/web
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: cis-api
+          property: host
+      - key: NODE_ENV
+        value: production

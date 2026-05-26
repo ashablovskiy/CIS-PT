@@ -9,15 +9,23 @@ import { formatDistanceToNow } from "date-fns";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const STATUS_STYLES: Record<string, string> = {
-  complete: "bg-green-100 text-green-700",
-  needs_review: "bg-amber-100 text-amber-700",
-  error: "bg-red-100 text-red-700",
-  pending: "bg-slate-100 text-slate-600",
+  complete: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  needs_review: "bg-amber-100 text-amber-700 border-amber-200",
+  error: "bg-red-100 text-red-700 border-red-200",
+  pending: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const DIM_COLORS: Record<string, string> = {
+  increase: "text-red-600",
+  decrease: "text-emerald-600",
+  neutral: "text-slate-400",
+  disrupted: "text-orange-600",
+  restricted: "text-purple-600",
+};
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
       <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
         <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
       </div>
@@ -26,28 +34,100 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function ImpactRow({ dimension, data }: { dimension: string; data: any }) {
-  if (!data) return null;
-  const { direction, magnitude_pct, confidence } = data;
-  const isUp = direction === "increase";
-  const isNeutral = direction === "neutral";
+function ConfidenceRing({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-slate-300">—</span>;
+  const pct = Math.round(value * 100);
+  const color = value >= 0.7 ? "#10b981" : value >= 0.45 ? "#f59e0b" : "#ef4444";
+  const r = 22, circ = 2 * Math.PI * r;
+  const dash = (value * circ).toFixed(1);
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
-      <div className="w-24 text-xs font-medium text-slate-600 capitalize">{dimension}</div>
-      <div className={`text-sm font-semibold w-24 ${isNeutral ? "text-slate-400" : isUp ? "text-red-600" : "text-green-600"}`}>
-        {isNeutral ? "—" : isUp ? "▲" : "▼"} {isNeutral ? "neutral" : `${magnitude_pct ?? "?"}%`}
-      </div>
-      {confidence != null && (
-        <div className="flex items-center gap-1">
-          <div className="h-1.5 w-20 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-400 rounded-full"
-              style={{ width: `${(confidence ?? 0) * 100}%` }}
-            />
-          </div>
-          <span className="text-xs text-slate-400">{Math.round((confidence ?? 0) * 100)}%</span>
+    <div className="flex flex-col items-center">
+      <svg width="60" height="60" className="-rotate-90">
+        <circle cx="30" cy="30" r={r} fill="none" stroke="#e2e8f0" strokeWidth="5" />
+        <circle cx="30" cy="30" r={r} fill="none" stroke={color} strokeWidth="5"
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" />
+      </svg>
+      <span className="text-lg font-bold -mt-10" style={{ color }}>{pct}%</span>
+      <span className="text-xs text-slate-400 mt-6">confidence</span>
+    </div>
+  );
+}
+
+function ImpactRow({ dimension, data }: { dimension: string; data: any }) {
+  if (!data || dimension.startsWith("_")) return null;
+  const { direction, magnitude_pct, confidence, detail,
+          ml_magnitude_pct, ml_direction, ml_confidence, ml_used } = data;
+  const arrow = direction === "increase" ? "▲" : direction === "decrease" ? "▼" : "—";
+  const colClass = DIM_COLORS[direction] || "text-slate-500";
+  return (
+    <div className="py-3 border-b border-slate-100 last:border-0">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="w-28 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          {dimension.replace(/_/g, " ")}
         </div>
+        <span className={`text-sm font-bold w-20 ${colClass}`}>
+          {arrow} {direction === "neutral" ? "neutral" : magnitude_pct != null ? `${magnitude_pct}%` : "—"}
+        </span>
+        {confidence != null && (
+          <div className="flex items-center gap-1.5">
+            <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-400 rounded-full"
+                style={{ width: `${Math.round(confidence * 100)}%` }} />
+            </div>
+            <span className="text-xs text-slate-400">{Math.round(confidence * 100)}%</span>
+          </div>
+        )}
+        {/* ML enrichment badge */}
+        {ml_used && ml_magnitude_pct != null && (
+          <span className="ml-auto text-[11px] bg-violet-50 border border-violet-200 text-violet-700
+            px-2 py-0.5 rounded-full font-medium">
+            ML: {ml_direction === "increase" ? "▲" : ml_direction === "decrease" ? "▼" : "—"}{" "}
+            {ml_magnitude_pct}% · {Math.round((ml_confidence ?? 0) * 100)}% conf
+          </span>
+        )}
+      </div>
+      {detail && (
+        <p className="text-xs text-slate-500 mt-1 ml-31 leading-relaxed pl-[7.5rem]">{detail}</p>
       )}
+    </div>
+  );
+}
+
+function ReasoningStep({ step, index }: { step: any; index: number }) {
+  const source = typeof step.grounded_in === "object"
+    ? step.grounded_in?.source ?? JSON.stringify(step.grounded_in)
+    : String(step.grounded_in ?? "");
+
+  return (
+    <div className="flex gap-4 group">
+      {/* Step number + connector */}
+      <div className="flex flex-col items-center">
+        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center
+          text-white text-xs font-bold shrink-0 shadow-sm">
+          {step.step ?? index + 1}
+        </div>
+        <div className="w-px flex-1 bg-slate-200 mt-1 mb-1 group-last:hidden" />
+      </div>
+      {/* Content */}
+      <div className="pb-5 flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-800 leading-snug">{step.claim}</p>
+        {step.inference && (
+          <p className="text-sm text-slate-500 mt-1">
+            <span className="text-blue-400 font-medium">∴ </span>{step.inference}
+          </p>
+        )}
+        {source && (
+          <div className="mt-2 flex items-start gap-1.5">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
+              Source
+            </span>
+            <span className="text-xs text-slate-500 bg-slate-50 border border-slate-200
+              rounded px-2 py-0.5 font-mono leading-relaxed">
+              {source}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -57,224 +137,229 @@ export default function AssessmentDetailPage() {
   const { data: a, isLoading, error } = useSWR(`/api/assessments/${id}`, fetcher);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackAction, setFeedbackAction] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function submitFeedback(action: string) {
+    setSubmitting(true);
     setFeedbackAction(action);
-    await fetch("/api/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assessment_id: id, user_action: action }),
-    });
-    setFeedbackSent(true);
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assessment_id: id, user_action: action }),
+      });
+      setFeedbackSent(true);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (isLoading) {
-    return (
-      <div className="p-8 text-slate-400 animate-pulse text-sm">Loading assessment…</div>
-    );
+    return <div className="p-10 text-slate-400 text-sm animate-pulse">Loading assessment…</div>;
   }
   if (error || !a) {
     return (
-      <div className="p-8 text-slate-400 text-sm">
+      <div className="p-10 text-slate-500 text-sm">
         Assessment not found.{" "}
-        <Link href="/assessments" className="text-blue-500 hover:underline">
-          ← Back
-        </Link>
+        <Link href="/assessments" className="text-blue-500 hover:underline">← Back</Link>
       </div>
     );
   }
 
   const entities = a.affected_entities || {};
-  const impact = a.impact || {};
-  const clauses: any[] = a.affected_clauses || [];
-  const chain: any[] = a.reasoning_chain || [];
+  const impact   = a.impact || {};
+  const clauses: any[] = Array.isArray(a.affected_clauses) ? a.affected_clauses : [];
+  const chain:   any[] = Array.isArray(a.reasoning_chain)  ? a.reasoning_chain  : [];
+  const hasEntities = Object.values(entities).some((v: any) => Array.isArray(v) && v.length > 0);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-5">
-      {/* Back + header */}
-      <div>
-        <Link href="/assessments" className="text-sm text-slate-400 hover:text-slate-600 mb-3 inline-block">
-          ← Assessments
-        </Link>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Assessment Detail</h1>
-            <div className="flex items-center gap-3 mt-1">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[a.status] || STATUS_STYLES.pending}`}>
-                {a.status?.replace(/_/g, " ")}
-              </span>
-              <span className="text-xs text-slate-400 font-mono">{a.id?.slice(0, 8)}…</span>
-              {a.created_at && (
-                <span className="text-xs text-slate-400">
-                  {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-5">
+
+        {/* Header */}
+        <div>
+          <Link href="/assessments" className="text-sm text-slate-400 hover:text-slate-600 mb-4 inline-block">
+            ← Assessments
+          </Link>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${STATUS_STYLES[a.status] || STATUS_STYLES.pending}`}>
+                  {a.status?.replace(/_/g, " ")}
                 </span>
-              )}
+                <span className="text-xs text-slate-400 font-mono">{a.id?.slice(0, 8)}…</span>
+                {a.created_at && (
+                  <span className="text-xs text-slate-400">
+                    {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                  </span>
+                )}
+                {a.agent_version && (
+                  <span className="text-xs text-slate-300">· {a.agent_version}</span>
+                )}
+              </div>
+              <h1 className="text-xl font-bold text-slate-900 leading-tight">
+                {a.signal?.title || "Impact Assessment"}
+              </h1>
             </div>
-          </div>
-          {/* Confidence */}
-          <div className="text-right">
-            <div className="text-xs text-slate-400 mb-1">Confidence</div>
-            <div className={`text-2xl font-bold ${
-              (a.confidence ?? 0) >= 0.7 ? "text-green-600" :
-              (a.confidence ?? 0) >= 0.45 ? "text-amber-600" : "text-red-500"
-            }`}>
-              {a.confidence != null ? `${Math.round(a.confidence * 100)}%` : "—"}
-            </div>
+            <ConfidenceRing value={a.confidence} />
           </div>
         </div>
-      </div>
 
-      {/* Signal context */}
-      {a.signal && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-start gap-3">
-          <span className="text-blue-400 text-sm mt-0.5">📡</span>
-          <div>
-            <div className="text-sm font-medium text-blue-800">{a.signal.title || "Signal"}</div>
-            <div className="text-xs text-blue-500 mt-0.5">
-              {a.signal.source}
-              {a.signal.occurred_at && ` · ${formatDistanceToNow(new Date(a.signal.occurred_at), { addSuffix: true })}`}
+        {/* Signal source banner */}
+        {a.signal && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-start gap-3">
+            <span className="text-blue-400 mt-0.5">📡</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-blue-800 truncate">
+                {a.signal.title || a.signal.source}
+              </div>
+              <div className="text-xs text-blue-500 mt-0.5 flex gap-2 flex-wrap">
+                <span className="uppercase font-semibold">{a.signal.source}</span>
+                {a.signal.occurred_at && (
+                  <span>· {formatDistanceToNow(new Date(a.signal.occurred_at), { addSuffix: true })}</span>
+                )}
+              </div>
             </div>
             {a.signal.url && (
               <a href={a.signal.url} target="_blank" rel="noopener noreferrer"
-                className="text-xs text-blue-500 hover:underline mt-1 inline-block">
-                ↗ View source
-              </a>
+                className="text-xs text-blue-400 hover:text-blue-600 shrink-0">↗ Source</a>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Summary */}
-      <Section title="Executive Summary">
-        <p className="text-sm text-slate-700 leading-relaxed">{a.summary}</p>
-      </Section>
-
-      {/* Affected entities */}
-      {Object.keys(entities).some((k) => (entities[k] as string[]).length > 0) && (
-        <Section title="Affected Entities">
-          <div className="space-y-2">
-            {Object.entries(entities).map(([type, items]) => {
-              const arr = items as string[];
-              if (!arr.length) return null;
-              return (
-                <div key={type} className="flex gap-2 items-start">
-                  <div className="w-24 text-xs font-medium text-slate-500 capitalize shrink-0 pt-0.5">
-                    {type}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {arr.map((item) => (
-                      <span key={item} className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-700">
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
-
-      {/* Impact by dimension */}
-      {Object.keys(impact).length > 0 && (
-        <Section title="Impact by Dimension">
-          {Object.entries(impact).map(([dim, data]) => (
-            <ImpactRow key={dim} dimension={dim} data={data} />
-          ))}
-        </Section>
-      )}
-
-      {/* Contract clauses */}
-      {clauses.length > 0 && (
-        <Section title="Contract Clause Implications">
-          <div className="space-y-2">
-            {clauses.map((c, i) => (
-              <div
-                key={i}
-                className={`rounded-lg border px-4 py-3 ${
-                  c.triggered
-                    ? "bg-red-50 border-red-200"
-                    : "bg-slate-50 border-slate-200"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  {c.triggered && <span className="text-red-500 text-xs font-semibold">⚠ TRIGGERED</span>}
-                  <span className="text-xs font-semibold text-slate-600">
-                    {c.clause_type?.replace(/_/g, " ")}
-                  </span>
-                  {c.contract_id && (
-                    <span className="text-xs text-slate-400 font-mono">{c.contract_id}</span>
-                  )}
-                </div>
-                {c.detail && (
-                  <p className="text-xs text-slate-600">{c.detail}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Reasoning chain */}
-      {chain.length > 0 && (
-        <Section title="Reasoning Chain">
-          <div className="space-y-3">
-            {chain.map((step: any, i: number) => (
-              <div key={i} className="flex gap-3">
-                <div className="shrink-0 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                  {step.step ?? i + 1}
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-slate-800">{step.claim}</div>
-                  {step.inference && (
-                    <div className="text-xs text-slate-500 mt-0.5">→ {step.inference}</div>
-                  )}
-                  {step.grounded_in && (
-                    <div className="text-xs text-slate-400 mt-0.5 italic">
-                      Source: {step.grounded_in}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Feedback widget */}
-      <Section title="Analyst Feedback">
-        {feedbackSent ? (
-          <div className="text-sm text-green-600 font-medium">
-            ✓ Feedback recorded ({feedbackAction}). Thank you.
-          </div>
-        ) : (
-          <div>
-            <p className="text-xs text-slate-500 mb-3">
-              Your feedback trains the DSPy optimisation loop (Week 5).
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => submitFeedback("accept")}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
-              >
-                ✓ Accept
-              </button>
-              <button
-                onClick={() => submitFeedback("reject")}
-                className="px-4 py-2 rounded-lg bg-red-100 text-red-700 text-sm font-medium hover:bg-red-200 transition-colors"
-              >
-                ✕ Reject
-              </button>
-              <button
-                onClick={() => submitFeedback("edit")}
-                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors"
-              >
-                ✎ Needs Edit
-              </button>
-            </div>
-          </div>
         )}
-      </Section>
+
+        {/* Summary */}
+        <Card title="Executive Summary">
+          <p className="text-sm text-slate-700 leading-relaxed">{a.summary}</p>
+        </Card>
+
+        {/* Entities */}
+        {hasEntities && (
+          <Card title="Affected Entities">
+            <div className="space-y-3">
+              {Object.entries(entities).map(([type, items]) => {
+                const arr = items as string[];
+                if (!arr.length) return null;
+                const iconMap: Record<string, string> = {
+                  suppliers: "🏭", plants: "⚙️", ports: "🚢", commodities: "📦",
+                };
+                return (
+                  <div key={type} className="flex gap-3 items-start">
+                    <div className="w-24 text-xs font-semibold text-slate-500 capitalize
+                      flex items-center gap-1 shrink-0 pt-0.5">
+                      <span>{iconMap[type] ?? "•"}</span> {type}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {arr.map((item) => (
+                        <span key={item}
+                          className="px-2.5 py-0.5 bg-slate-100 hover:bg-slate-200
+                            rounded-full text-xs text-slate-700 transition-colors">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Impact by dimension */}
+        {Object.keys(impact).length > 0 && (
+          <Card title="Impact by Dimension">
+            {Object.entries(impact).map(([dim, data]) => (
+              <ImpactRow key={dim} dimension={dim} data={data} />
+            ))}
+          </Card>
+        )}
+
+        {/* Contract clauses */}
+        {clauses.length > 0 && (
+          <Card title="Contract Clause Analysis">
+            <div className="space-y-2.5">
+              {clauses.map((c, i) => (
+                <div key={i}
+                  className={`rounded-xl border px-4 py-3 ${
+                    c.triggered
+                      ? "bg-red-50 border-red-200"
+                      : "bg-slate-50 border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    {c.triggered ? (
+                      <span className="text-[11px] font-bold text-red-600 bg-red-100
+                        px-2 py-0.5 rounded-full uppercase tracking-wide">⚠ Triggered</span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-400
+                        bg-slate-100 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                        Not triggered
+                      </span>
+                    )}
+                    <span className="text-xs font-semibold text-slate-700 capitalize">
+                      {c.clause_type?.replace(/_/g, " ")}
+                    </span>
+                    {c.contract_id && (
+                      <span className="text-xs text-slate-400 font-mono ml-auto">{c.contract_id}</span>
+                    )}
+                  </div>
+                  {c.detail && (
+                    <p className="text-xs text-slate-600 leading-relaxed">{c.detail}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Reasoning chain */}
+        {chain.length > 0 && (
+          <Card title={`Reasoning Chain (${chain.length} steps)`}>
+            <div className="pt-1">
+              {chain.map((step: any, i: number) => (
+                <ReasoningStep key={i} step={step} index={i} />
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Feedback */}
+        <Card title="Analyst Feedback">
+          {feedbackSent ? (
+            <div className="flex items-center gap-2 text-sm text-emerald-700 font-medium">
+              <span>✓</span>
+              <span>
+                Feedback recorded as <strong>{feedbackAction}</strong>.
+                {feedbackAction !== "reject" && " A training example has been queued for the optimizer."}
+              </span>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-slate-500 mb-4">
+                Your decision trains the DSPy optimization loop. Accept/Edit responses
+                are stored as training examples for the weekly MIPROv2 run.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => submitFeedback("accept")} disabled={submitting}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold
+                    hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                  ✓ Accept
+                </button>
+                <button onClick={() => submitFeedback("edit")} disabled={submitting}
+                  className="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-semibold
+                    hover:bg-slate-800 transition-colors disabled:opacity-50">
+                  ✎ Needs Edit
+                </button>
+                <button onClick={() => submitFeedback("reject")} disabled={submitting}
+                  className="px-4 py-2 rounded-lg bg-red-100 text-red-700 text-sm font-semibold
+                    hover:bg-red-200 transition-colors disabled:opacity-50">
+                  ✕ Reject
+                </button>
+              </div>
+            </div>
+          )}
+        </Card>
+
+      </div>
     </div>
   );
 }

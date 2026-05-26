@@ -59,8 +59,11 @@ async def vector_retriever_node(state: AssessmentState) -> AssessmentState:
 
     try:
         async with async_session_factory() as session:
-            # Search classified_signals joined to assessments for context
-            rows = await session.execute(text("""
+            # Inline the vector literal — asyncpg cannot bind float[] as vector type,
+            # and CAST(:param AS vector) fails because the param is bound as text.
+            # The embedding is a trusted float array so direct interpolation is safe.
+            vec_literal = "[" + ",".join(str(v) for v in embedding) + "]"
+            rows = await session.execute(text(f"""
                 SELECT
                     cs.signal_id,
                     s.source,
@@ -68,18 +71,17 @@ async def vector_retriever_node(state: AssessmentState) -> AssessmentState:
                     sr.decision,
                     a.summary        AS assessment_summary,
                     a.impact         AS assessment_impact,
-                    1 - (cs.embedding <=> CAST(:embedding AS vector)) AS similarity
+                    1 - (cs.embedding <=> '{vec_literal}'::vector) AS similarity
                 FROM classified_signals cs
                 JOIN signals s ON s.id = cs.signal_id
                 LEFT JOIN signal_relevance sr ON sr.signal_id = cs.signal_id
                 LEFT JOIN assessments a ON a.signal_id = cs.signal_id
                 WHERE cs.embedding IS NOT NULL
                   AND cs.signal_id != :current_id
-                  AND 1 - (cs.embedding <=> CAST(:embedding AS vector)) > :min_sim
-                ORDER BY cs.embedding <=> CAST(:embedding AS vector)
+                  AND 1 - (cs.embedding <=> '{vec_literal}'::vector) > :min_sim
+                ORDER BY cs.embedding <=> '{vec_literal}'::vector
                 LIMIT :top_k
             """), {
-                "embedding": str(embedding),
                 "current_id": str(state.signal_id),
                 "min_sim": _MIN_SIMILARITY,
                 "top_k": _TOP_K,

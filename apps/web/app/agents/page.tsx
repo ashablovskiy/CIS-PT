@@ -1,48 +1,189 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const SOURCE_META: Record<string, { label: string; icon: string; cadence: string }> = {
-  prices: { label: "Prices Agent", icon: "💹", cadence: "Every hour" },
-  gdelt:  { label: "GDELT Agent",  icon: "🌍", cadence: "Every hour" },
-  logistics: { label: "Logistics Agent", icon: "🚢", cadence: "Every hour" },
-  press: { label: "Press Agent", icon: "📰", cadence: "Every 2 hours" },
-  demand: { label: "Demand Agent", icon: "📈", cadence: "Every 4 hours" },
-  sec:   { label: "SEC Agent", icon: "📄", cadence: "Daily 06:00 UTC" },
+const SOURCE_META: Record<string, { label: string; icon: string }> = {
+  prices:    { label: "Prices Agent",    icon: "💹" },
+  gdelt:     { label: "GDELT Agent",     icon: "🌍" },
+  logistics: { label: "Logistics Agent", icon: "🚢" },
+  press:     { label: "Press Agent",     icon: "📰" },
+  demand:    { label: "Demand Agent",    icon: "📈" },
+  sec:       { label: "SEC Agent",       icon: "📄" },
 };
 
-function AgentCard({ agent }: { agent: any }) {
-  const meta = SOURCE_META[agent.source] || { label: agent.source, icon: "⚙️", cadence: "—" };
-  const escalateRate = agent.total > 0 ? ((agent.escalated / agent.total) * 100).toFixed(1) : "0";
+const INTERVAL_OPTIONS = [1, 2, 4, 6, 12, 24];
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+
+function Toggle({ checked, onChange, disabled }: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+      aria-label={checked ? "Disable agent" : "Enable agent"}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors
+        ${checked ? "bg-green-400" : "bg-slate-200"}
+        ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform
+          ${checked ? "translate-x-5" : "translate-x-1"}`}
+      />
+    </button>
+  );
+}
+
+// ── Schedule display helper ───────────────────────────────────────────────────
+
+function formatSchedule(cfg: AgentConfig | undefined): string {
+  if (!cfg) return "—";
+  if (cfg.schedule_mode === "daily") {
+    return `Daily ${String(cfg.daily_hour ?? 0).padStart(2, "0")}:00 UTC`;
+  }
+  return `Every ${cfg.interval_hours}h`;
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface AgentConfig {
+  enabled: boolean;
+  schedule_mode: "interval" | "daily";
+  interval_hours: number;
+  daily_hour: number;
+  lookback_hours: number;
+}
+
+interface AgentStatus {
+  source: string;
+  total: number;
+  escalated: number;
+  discarded: number;
+  last_seen: string | null;
+}
+
+// ── Agent Card ────────────────────────────────────────────────────────────────
+
+function AgentCard({ agent, config, onConfigChange }: {
+  agent: AgentStatus;
+  config: AgentConfig | undefined;
+  onConfigChange: () => void;
+}) {
+  const meta = SOURCE_META[agent.source] ?? { label: agent.source, icon: "⚙️" };
+  const escalateRate = agent.total > 0
+    ? ((agent.escalated / agent.total) * 100).toFixed(1)
+    : "0";
+
+  // Schedule editing state
+  const [editSched, setEditSched] = useState(false);
+  const [schedMode, setSchedMode] = useState<"interval" | "daily">(config?.schedule_mode ?? "interval");
+  const [intervalH, setIntervalH] = useState(config?.interval_hours ?? 1);
+  const [dailyH, setDailyH] = useState(config?.daily_hour ?? 6);
+  const [saving, setSaving] = useState(false);
+
+  // Run-now state
+  const [runOpen, setRunOpen] = useState(false);
+  const [runLookback, setRunLookback] = useState(config?.lookback_hours ?? 6);
+  const [running, setRunning] = useState(false);
+  const [runMsg, setRunMsg] = useState<string | null>(null);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
+
+  const enabled = config?.enabled ?? true;
+
+  async function patchConfig(patch: Record<string, unknown>) {
+    const res = await fetch(`${API}/api/agents/config/${agent.source}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    onConfigChange();
+  }
+
+  async function handleToggle(val: boolean) {
+    setTogglingEnabled(true);
+    try { await patchConfig({ enabled: val }); }
+    finally { setTogglingEnabled(false); }
+  }
+
+  async function handleSaveSchedule() {
+    setSaving(true);
+    const patch: Record<string, unknown> = { schedule_mode: schedMode };
+    if (schedMode === "interval") patch.interval_hours = intervalH;
+    else patch.daily_hour = dailyH;
+    try {
+      await patchConfig(patch);
+      setEditSched(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRunNow() {
+    setRunning(true);
+    setRunMsg(null);
+    try {
+      await fetch(`${API}/api/agents/run/${agent.source}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lookback_hours: runLookback }),
+      });
+      setRunOpen(false);
+      setRunMsg(`Started — collecting last ${runLookback}h`);
+      setTimeout(() => setRunMsg(null), 5000);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
+    <div className={`bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-0 transition-opacity
+      ${enabled ? "" : "opacity-60"}`}>
+
+      {/* ── Header ── */}
       <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="text-2xl">{meta.icon}</div>
-          <div>
-            <div className="font-semibold text-slate-800">{meta.label}</div>
-            <div className="text-xs text-slate-400">{meta.cadence}</div>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="text-2xl shrink-0">{meta.icon}</div>
+          <div className="min-w-0">
+            <div className="font-semibold text-slate-800 truncate">{meta.label}</div>
+            <div className="text-xs text-slate-400 flex items-center gap-1.5">
+              {formatSchedule(config)}
+              {!enabled && (
+                <span className="text-slate-400 italic">· paused</span>
+              )}
+            </div>
           </div>
         </div>
-        <div className={`w-2 h-2 rounded-full mt-1 ${agent.last_seen ? "bg-green-400" : "bg-slate-200"}`}
-          title={agent.last_seen ? "Recently active" : "No activity"} />
+        <div className="flex items-center gap-2 shrink-0 ml-2">
+          <div
+            className={`w-2 h-2 rounded-full ${agent.last_seen ? "bg-green-400" : "bg-slate-200"}`}
+            title={agent.last_seen ? "Recently active" : "No activity"}
+          />
+          <Toggle checked={enabled} onChange={handleToggle} disabled={togglingEnabled} />
+        </div>
       </div>
 
+      {/* ── Metrics ── */}
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <Metric label="Total" value={agent.total} />
+        <Metric label="Total"     value={agent.total} />
         <Metric label="Escalated" value={agent.escalated} highlight />
         <Metric label="Discarded" value={agent.discarded} />
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* ── Escalation rate + last seen ── */}
+      <div className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs text-slate-400 mb-1">Escalation rate</div>
-          <div className="flex items-center gap-1">
-            <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="flex items-center gap-1.5">
+            <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-red-400 rounded-full"
                 style={{ width: `${escalateRate}%` }}
@@ -60,11 +201,131 @@ function AgentCard({ agent }: { agent: any }) {
           </div>
         </div>
       </div>
+
+      {/* ── Controls ── */}
+      <div className="border-t border-slate-100 pt-3 space-y-2.5">
+
+        {/* Schedule editor */}
+        {editSched ? (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Schedule</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={schedMode}
+                onChange={(e) => setSchedMode(e.target.value as "interval" | "daily")}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+              >
+                <option value="interval">Every N hours</option>
+                <option value="daily">Daily at hour</option>
+              </select>
+
+              {schedMode === "interval" ? (
+                <select
+                  value={intervalH}
+                  onChange={(e) => setIntervalH(Number(e.target.value))}
+                  className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                >
+                  {INTERVAL_OPTIONS.map((h) => (
+                    <option key={h} value={h}>{h}h</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={dailyH}
+                    onChange={(e) => setDailyH(Number(e.target.value))}
+                    className="text-xs border border-slate-200 rounded-md px-2 py-1.5 w-14 text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                  />
+                  <span className="text-xs text-slate-400">:00 UTC</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSaveSchedule}
+                disabled={saving}
+                className="text-xs px-2.5 py-1.5 bg-slate-800 text-white rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => setEditSched(false)}
+                className="text-xs px-2 py-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 italic">
+              Schedule takes effect at next API restart
+            </p>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditSched(true)}
+            className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+          >
+            Edit schedule
+          </button>
+        )}
+
+        {/* Run now */}
+        {runMsg ? (
+          <div className="text-xs text-green-600 font-medium">{runMsg}</div>
+        ) : runOpen ? (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Single run</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500">Collect last</span>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={runLookback}
+                onChange={(e) => setRunLookback(Number(e.target.value))}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 w-14 text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+              />
+              <span className="text-xs text-slate-500">hours of data</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRunNow}
+                disabled={running}
+                className="text-xs px-2.5 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {running ? "Starting…" : "▶ Run"}
+              </button>
+              <button
+                onClick={() => setRunOpen(false)}
+                className="text-xs px-2 py-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setRunOpen(true)}
+            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+          >
+            ▶ Run now
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-function Metric({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+// ── Metric ────────────────────────────────────────────────────────────────────
+
+function Metric({ label, value, highlight }: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}) {
   return (
     <div className="text-center">
       <div className={`text-xl font-bold ${highlight ? "text-red-600" : "text-slate-800"}`}>
@@ -75,16 +336,19 @@ function Metric({ label, value, highlight }: { label: string; value: number; hig
   );
 }
 
-function PipelineSummary({ data }: { data: any[] }) {
-  const total = data.reduce((s, a) => s + a.total, 0);
+// ── Pipeline summary banner ───────────────────────────────────────────────────
+
+function PipelineSummary({ data, configs }: { data: AgentStatus[]; configs: Record<string, AgentConfig> | undefined }) {
+  const total     = data.reduce((s, a) => s + a.total, 0);
   const escalated = data.reduce((s, a) => s + a.escalated, 0);
+  const active    = configs ? Object.values(configs).filter((c) => c.enabled).length : "—";
 
   return (
     <div className="bg-slate-900 rounded-xl p-5 text-white mb-6">
       <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-        Pipeline Summary (last 24h)
+        Pipeline Summary — last 24h
       </div>
-      <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-6 text-sm flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-2xl font-bold">{total}</span>
           <span className="text-slate-400">signals ingested</span>
@@ -95,27 +359,36 @@ function PipelineSummary({ data }: { data: any[] }) {
           <span className="text-slate-400">escalated</span>
         </div>
         <div className="text-slate-600">→</div>
-        <div className="flex items-center gap-2">
-          <span className="text-slate-400">7-node assessment pipeline</span>
+        <span className="text-slate-400">7-node assessment pipeline</span>
+        <div className="ml-auto flex items-center gap-1.5 text-slate-400 text-xs">
+          <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+          {active} / 6 agents active
         </div>
       </div>
     </div>
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function AgentsPage() {
-  const { data: agents, isLoading } = useSWR(
-    "/api/agents/status?hours=24",
+  const { data: agents, isLoading } = useSWR<AgentStatus[]>(
+    `${API}/api/agents/status?hours=24`,
     fetcher,
     { refreshInterval: 60_000 }
+  );
+
+  const { data: configs, mutate: mutateConfigs } = useSWR<Record<string, AgentConfig>>(
+    `${API}/api/agents/config`,
+    fetcher
   );
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Agent Observability</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Agents</h1>
         <p className="text-slate-500 text-sm mt-1">
-          6 ingestion agents + assessment pipeline + daily scout
+          Toggle agents on/off, edit their schedule, or trigger a one-off run with a custom lookback window
         </p>
       </div>
 
@@ -123,15 +396,22 @@ export default function AgentsPage() {
         <div className="text-slate-400 text-sm animate-pulse">Loading agent status…</div>
       )}
 
-      {agents && agents.length > 0 && <PipelineSummary data={agents} />}
+      {agents && agents.length > 0 && (
+        <PipelineSummary data={agents} configs={configs} />
+      )}
 
       <div className="grid grid-cols-3 gap-4">
-        {(agents ?? []).map((agent: any) => (
-          <AgentCard key={agent.source} agent={agent} />
+        {(agents ?? []).map((agent) => (
+          <AgentCard
+            key={agent.source}
+            agent={agent}
+            config={configs?.[agent.source]}
+            onConfigChange={() => mutateConfigs()}
+          />
         ))}
       </div>
 
-      {/* System info */}
+      {/* System architecture reference */}
       <div className="mt-6 bg-white rounded-xl border border-slate-200 p-5">
         <div className="text-sm font-semibold text-slate-700 mb-3">System Architecture</div>
         <div className="grid grid-cols-2 gap-4 text-xs text-slate-600">

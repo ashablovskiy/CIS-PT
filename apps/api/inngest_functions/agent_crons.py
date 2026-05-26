@@ -21,6 +21,8 @@ import logging
 import inngest
 import inngest.fast_api
 
+from apps.api import agent_configs as _agent_configs
+
 logger = logging.getLogger(__name__)
 
 # Inngest client — signing key required in prod; dev mode works without it.
@@ -50,6 +52,12 @@ def _make_agent_fn(
     )
     async def _fn(ctx: inngest.Context, step: inngest.Step) -> dict:
         import importlib
+
+        # Respect the enabled flag — skip the run silently if agent is paused
+        source_key = fn_id.split("/")[-1].replace("-agent", "")
+        if not _agent_configs.is_enabled(source_key):
+            logger.info("[%s] Skipping cron run — agent is disabled", fn_id)
+            return {"status": "skipped", "reason": "disabled"}
 
         async def run_agent() -> dict:
             module = importlib.import_module(agent_import)

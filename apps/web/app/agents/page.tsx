@@ -109,10 +109,11 @@ interface AgentStatus {
 
 // ── Agent Card ────────────────────────────────────────────────────────────────
 
-function AgentCard({ agent, config, onConfigChange }: {
+function AgentCard({ agent, config, onConfigChange, onRunTriggered }: {
   agent: AgentStatus;
   config: AgentConfig | undefined;
   onConfigChange: () => void;
+  onRunTriggered: () => void;
 }) {
   const meta = SOURCE_META[agent.source] ?? { label: agent.source, icon: "⚙️" };
 
@@ -165,13 +166,25 @@ function AgentCard({ agent, config, onConfigChange }: {
     setRunning(true);
     setRunMsg(null);
     try {
-      await fetch(`${API}/api/agents/run/${agent.source}`, {
+      const res = await fetch(`${API}/api/agents/run/${agent.source}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lookback_hours: runLookback }),
       });
+      if (!res.ok) {
+        setRunMsg(`Failed to start (HTTP ${res.status})`);
+        setTimeout(() => setRunMsg(null), 5000);
+        return;
+      }
       setRunOpen(false);
       setRunMsg(`Started — collecting last ${runLookback}h`);
+      setTimeout(() => setRunMsg(null), 5000);
+      // Immediately flip the parent into fast-poll mode and pull a fresh
+      // /status so the running chip appears without waiting for the next
+      // 60s cycle (fast agents like prices finish in <10s otherwise).
+      onRunTriggered();
+    } catch (err) {
+      setRunMsg(`Error: ${err instanceof Error ? err.message : "request failed"}`);
       setTimeout(() => setRunMsg(null), 5000);
     } finally {
       setRunning(false);
@@ -459,20 +472,40 @@ function PipelineSummary({ data, configs }: { data: AgentStatus[]; configs: Reco
 
 export default function AgentsPage() {
   // Poll fast (3s) while any agent is running so the elapsed counter and
-  // funnel results refresh promptly; slow to 60s when idle.
+  // funnel refresh promptly; slow to 60s when idle.
   const [pollMs, setPollMs] = useState(60_000);
+  // 'Just triggered a run' window — keeps fast-poll on for 30s even before
+  // the next /status response confirms is_running, so even fast agents
+  // (prices ~5s) are caught by the indicator.
+  const [hotUntil, setHotUntil] = useState(0);
 
-  const { data: agents, isLoading } = useSWR<AgentStatus[]>(
+  const { data: agents, isLoading, mutate: mutateAgents } = useSWR<AgentStatus[]>(
     `${API}/api/agents/status?hours=24`,
     fetcher,
     { refreshInterval: pollMs }
   );
 
-  // Adjust poll cadence whenever the running-set changes
+  // Adjust poll cadence: 3s if anything is currently running, OR if we just
+  // triggered a run and the trigger window hasn't expired.
   useEffect(() => {
     const anyRunning = (agents ?? []).some((a) => a.is_running);
-    setPollMs(anyRunning ? 3_000 : 60_000);
-  }, [agents]);
+    const inHotWindow = Date.now() < hotUntil;
+    setPollMs(anyRunning || inHotWindow ? 3_000 : 60_000);
+  }, [agents, hotUntil]);
+
+  // Keep the hotUntil window decaying via a 1s tick (cheap, only while hot)
+  useEffect(() => {
+    if (Date.now() >= hotUntil) return;
+    const id = setTimeout(() => setPollMs((p) => p), Math.max(0, hotUntil - Date.now()));
+    return () => clearTimeout(id);
+  }, [hotUntil]);
+
+  function handleRunTriggered() {
+    // Open a 30-second fast-poll window AND immediately refetch /status so
+    // we don't have to wait up to 60s for the next scheduled poll.
+    setHotUntil(Date.now() + 30_000);
+    mutateAgents();
+  }
 
   const { data: configs, mutate: mutateConfigs } = useSWR<Record<string, AgentConfig>>(
     `${API}/api/agents/config`,
@@ -503,6 +536,7 @@ export default function AgentsPage() {
             agent={agent}
             config={configs?.[agent.source]}
             onConfigChange={() => mutateConfigs()}
+            onRunTriggered={handleRunTriggered}
           />
         ))}
       </div>

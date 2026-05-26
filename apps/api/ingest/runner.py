@@ -219,12 +219,20 @@ class BaseIngestionAgent(ABC):
 
         results: list[ScoredItem] = []
         for item, score_obj in zip(items, scores):
+            tier = score_obj.get("tier")
+            try:
+                tier = int(tier) if tier is not None else None
+            except (TypeError, ValueError):
+                tier = None
             results.append(
                 ScoredItem(
                     item=item,
                     rule_score=1.0,  # passed rule filter
                     llm_score=float(score_obj.get("relevance", 0.0)),
                     llm_reasoning=score_obj.get("reasoning", ""),
+                    impact_tier=tier,
+                    impact_type=score_obj.get("impact_type"),
+                    mechanism=score_obj.get("mechanism"),
                 )
             )
         # Items beyond what the LLM returned get a neutral score (won't escalate)
@@ -302,6 +310,8 @@ class BaseIngestionAgent(ABC):
                         continue
 
                     # Upsert signal_relevance.
+                    # NB: analyst_score is intentionally NOT touched here — only
+                    # the PATCH /api/signals/{id}/score endpoint may write to it.
                     rel_stmt = (
                         insert(SignalRelevance)
                         .values(
@@ -310,6 +320,8 @@ class BaseIngestionAgent(ABC):
                             llm_score=scored.llm_score,
                             decision=scored.decision,
                             reasoning=scored.llm_reasoning,
+                            impact_type=scored.impact_type,
+                            impact_tier=scored.impact_tier,
                         )
                         .on_conflict_do_update(
                             index_elements=["signal_id"],
@@ -317,6 +329,8 @@ class BaseIngestionAgent(ABC):
                                 "llm_score": scored.llm_score,
                                 "decision": scored.decision,
                                 "reasoning": scored.llm_reasoning,
+                                "impact_type": scored.impact_type,
+                                "impact_tier": scored.impact_tier,
                             },
                         )
                     )

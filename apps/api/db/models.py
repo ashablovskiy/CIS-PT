@@ -65,6 +65,12 @@ class SignalRelevance(Base):
     )
     rule_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     llm_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # True analyst override; null until a user manually re-scores via the UI
+    analyst_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Domain-specific mechanism (controlled vocab from relevance_scorer prompt)
+    impact_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 1 = direct/high, 2 = moderate, 3 = peripheral, 4 = noise (null = legacy/unscored)
+    impact_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decision: Mapped[str | None] = mapped_column(String, nullable=True)  # discard|classify|escalate
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     scored_at: Mapped[datetime] = mapped_column(

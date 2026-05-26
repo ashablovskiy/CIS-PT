@@ -34,23 +34,78 @@ logger = logging.getLogger(__name__)
 
 DEFAULTS: dict[str, str] = {
     "relevance_scorer": """\
-You score signals for relevance to a power transformer procurement intelligence system.
+You score signals for impact on a POWER TRANSFORMER procurement intelligence system.
+Apply a strict tier system. Be conservative — most signals are Tier 3 or 4.
 
-Score 0.0 (irrelevant) → 1.0 (highly relevant to power transformer sourcing risk).
+═══ TIER DEFINITIONS ═══
 
-Relevant signals include anything touching:
-- Materials: GOES (grain-oriented electrical steel), copper, aluminum, mineral oil
-- Suppliers: Siemens Energy, Hitachi Energy, GE Vernova, Hyundai Electric, Hyosung,
-  Mitsubishi Electric, WEG, POSCO, Nippon Steel, JFE Steel, Cleveland-Cliffs
-- Logistics: Busan, Antwerp, Rotterdam, Bremerhaven, Norfolk, Savannah, Houston ports;
-  Korea→US, Japan→US, EU→US shipping lanes; heavy-lift vessel availability
-- Demand: hyperscaler datacenter construction (Microsoft, Google, Amazon, Meta),
-  IRA grid modernization, REPowerEU
-- Trade/regulatory: GOES export controls, steel tariffs, sanctions affecting suppliers
-- Financial: capex disclosures from transformer OEMs or hyperscalers, backlog changes
+TIER 1 — DIRECT, HIGH (relevance 0.80–1.00)
+A direct, material change to transformer cost, availability, or lead time.
+Examples:
+- GOES (grain-oriented electrical steel) price ≥ ±5% move, or sustained trend
+- Named Tier-1 OEM (Siemens Energy, Hitachi Energy, GE Vernova, Hyundai Electric,
+  Mitsubishi Electric, Hyosung, WEG) announcing capacity, capex, backlog, force majeure,
+  factory incident, M&A, or labor disruption affecting transformer production
+- GOES-specific tariffs, anti-dumping rulings, or export controls
+- Korea→US, Japan→US heavy-lift vessel disruption affecting OEM shipping lanes
 
-Return ONLY a JSON array with one object per signal (same order as input):
-[{"relevance": 0.0-1.0, "reasoning": "brief explanation"}]""",
+TIER 2 — MODERATE / INDIRECT (relevance 0.50–0.79)
+Material upstream/downstream impact, second-order.
+Examples:
+- Copper or aluminum price move ≥ ±5% (winding metals — real cost impact, not freight)
+- Pressboard / Nomex / transformer oil supply disruption
+- Sub-tier supplier (POSCO, Nippon Steel, JFE for GOES; Cleveland-Cliffs for steel) news
+- Major hyperscaler datacenter announcement that materially shifts demand queue
+- IRA / REPowerEU / Saudi Vision 2030 grid funding milestones
+- Port congestion at Busan, Antwerp, Rotterdam, Bremerhaven, Norfolk, Savannah, Houston
+
+TIER 3 — PERIPHERAL (relevance 0.25–0.49)
+Indirect proxy, weak signal, or distant correlation.
+Examples:
+- Crude oil / WTI / Brent moves (only a freight-cost proxy — NOT a direct input)
+- Baltic Dry Index moves under ±10%
+- General steel/HRC price moves (without GOES specificity)
+- Industry news about adjacent equipment (switchgear, cables) with no transformer linkage
+- Macro economic news without specific supplier or commodity mention
+
+TIER 4 — NOISE (relevance 0.00–0.24)
+No identifiable impact mechanism on power transformer supply chain.
+Examples:
+- Generic geopolitical news with no supplier/commodity/lane link
+- Routine corporate filings (proxy votes, dividends) without procurement substance
+- Sports, elections, weather, unless directly affecting a named OEM plant or lane
+
+═══ IMPACT TYPE — CONTROLLED VOCABULARY ═══
+
+Pick exactly ONE that best describes the mechanism. If none fit, return "No TP impact".
+
+  "GOES input cost"          Grain-oriented electrical steel pricing
+  "Winding metal cost"       Copper / aluminum pricing (transformer windings)
+  "Insulation material"      Pressboard, Nomex, oil, ester fluid supply or pricing
+  "OEM capacity"             Tier-1 OEM production / backlog / capex change
+  "OEM disruption"           Force majeure, fire, strike, M&A at a Tier-1 OEM
+  "Sub-tier supplier"        Steel-mill or component-supplier news
+  "Lane disruption"          Specific shipping lane / port / vessel disruption
+  "Demand surge"             Hyperscaler / grid project pulling on OEM queue
+  "Regulatory / trade"       Tariff, export control, sanction touching the chain
+  "Macro proxy"              Crude, BDI, general steel — proxy with weak linkage
+  "No TP impact"             Tier 4 — no mechanism on power-transformer chain
+
+═══ OUTPUT FORMAT ═══
+
+Return ONLY a JSON array, one object per input signal in the same order:
+
+[
+  {
+    "relevance": 0.00-1.00,
+    "tier": 1 | 2 | 3 | 4,
+    "impact_type": one of the controlled vocabulary above,
+    "mechanism": "one short sentence on the causal mechanism",
+    "reasoning": "one short sentence justifying the tier"
+  }
+]
+
+Be strict. When in doubt between two tiers, pick the lower-impact one.""",
 
     "triage_classifier": """\
 You are a supply-chain risk classifier for a power transformer procurement system.

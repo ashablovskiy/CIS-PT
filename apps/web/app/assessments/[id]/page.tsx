@@ -53,20 +53,41 @@ function ConfidenceRing({ value }: { value: number | null }) {
   );
 }
 
+/**
+ * Magnitudes can arrive as either a scalar number or a
+ * {low, mid, high} confidence interval (from the XGBoost price model).
+ */
+function magnitudeText(mag: unknown): { headline: string; range: string | null } {
+  if (mag == null) return { headline: "—", range: null };
+  if (typeof mag === "number") return { headline: `${mag.toFixed(1)}%`, range: null };
+  if (typeof mag === "object") {
+    const m = mag as { low?: number; mid?: number; high?: number };
+    if (typeof m.mid === "number") {
+      const range = (typeof m.low === "number" && typeof m.high === "number")
+        ? `${m.low.toFixed(1)}–${m.high.toFixed(1)}%`
+        : null;
+      return { headline: `${m.mid.toFixed(1)}%`, range };
+    }
+  }
+  return { headline: String(mag), range: null };
+}
+
 function ImpactRow({ dimension, data }: { dimension: string; data: any }) {
   if (!data || dimension.startsWith("_")) return null;
   const { direction, magnitude_pct, confidence, detail,
           ml_magnitude_pct, ml_direction, ml_confidence, ml_used } = data;
   const arrow = direction === "increase" ? "▲" : direction === "decrease" ? "▼" : "—";
   const colClass = DIM_COLORS[direction] || "text-slate-500";
+  const mag   = magnitudeText(magnitude_pct);
+  const mlMag = magnitudeText(ml_magnitude_pct);
   return (
     <div className="py-3 border-b border-slate-100 last:border-0">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="w-28 text-xs font-semibold text-slate-500 uppercase tracking-wide">
           {dimension.replace(/_/g, " ")}
         </div>
-        <span className={`text-sm font-bold w-20 ${colClass}`}>
-          {arrow} {direction === "neutral" ? "neutral" : magnitude_pct != null ? `${magnitude_pct}%` : "—"}
+        <span className={`text-sm font-bold w-24 ${colClass}`}>
+          {arrow} {direction === "neutral" ? "neutral" : mag.headline}
         </span>
         {confidence != null && (
           <div className="flex items-center gap-1.5">
@@ -82,12 +103,19 @@ function ImpactRow({ dimension, data }: { dimension: string; data: any }) {
           <span className="ml-auto text-[11px] bg-violet-50 border border-violet-200 text-violet-700
             px-2 py-0.5 rounded-full font-medium">
             ML: {ml_direction === "increase" ? "▲" : ml_direction === "decrease" ? "▼" : "—"}{" "}
-            {ml_magnitude_pct}% · {Math.round((ml_confidence ?? 0) * 100)}% conf
+            {mlMag.headline} · {Math.round((ml_confidence ?? 0) * 100)}% conf
           </span>
         )}
       </div>
+      {(mag.range || mlMag.range) && (
+        <div className="text-[10px] text-slate-400 mt-1 pl-[7.5rem]">
+          {mag.range && <>range {mag.range}</>}
+          {mag.range && mlMag.range && " · "}
+          {mlMag.range && <>ML range {mlMag.range}</>}
+        </div>
+      )}
       {detail && (
-        <p className="text-xs text-slate-500 mt-1 ml-31 leading-relaxed pl-[7.5rem]">{detail}</p>
+        <p className="text-xs text-slate-500 mt-1 leading-relaxed pl-[7.5rem]">{detail}</p>
       )}
     </div>
   );

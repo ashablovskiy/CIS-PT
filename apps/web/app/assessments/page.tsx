@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -32,9 +35,30 @@ function ConfidenceBadge({ value }: { value: number | null }) {
   return <span className={`text-sm font-semibold ${color}`}>{pct}%</span>;
 }
 
+/**
+ * Magnitudes can arrive as either a scalar number or a
+ * {low, mid, high} confidence interval (from the XGBoost price model).
+ * Returns a tuple: [headline text, optional range hint].
+ */
+function formatMagnitude(mag: unknown): [string, string | null] {
+  if (mag == null) return ["?", null];
+  if (typeof mag === "number") return [mag.toFixed(1), null];
+  if (typeof mag === "object") {
+    const m = mag as { low?: number; mid?: number; high?: number };
+    if (typeof m.mid === "number") {
+      const headline = m.mid.toFixed(1);
+      const range = (typeof m.low === "number" && typeof m.high === "number")
+        ? `${m.low.toFixed(1)}–${m.high.toFixed(1)}`
+        : null;
+      return [headline, range];
+    }
+  }
+  return [String(mag), null];
+}
+
 export default function AssessmentsPage() {
   const [filter, setFilter] = useState("all");
-  const url = `/api/assessments?limit=50${filter !== "all" ? `&status=${filter}` : ""}`;
+  const url = `${API}/api/assessments?limit=50${filter !== "all" ? `&status=${filter}` : ""}`;
   const { data: assessments, isLoading } = useSWR(url, fetcher, { refreshInterval: 30_000 });
 
   return (
@@ -81,9 +105,6 @@ export default function AssessmentsPage() {
   );
 }
 
-// Need to hoist useState import
-import { useState } from "react";
-
 function AssessmentCard({ assessment: a }: { assessment: any }) {
   const entities = a.affected_entities || {};
   const suppliers: string[] = entities.suppliers || [];
@@ -91,7 +112,7 @@ function AssessmentCard({ assessment: a }: { assessment: any }) {
   const impact = a.impact || {};
 
   const priceDir = impact.price?.direction;
-  const priceMag = impact.price?.magnitude_pct;
+  const [priceMagText, priceMagRange] = formatMagnitude(impact.price?.magnitude_pct);
 
   return (
     <Link href={`/assessments/${a.id}`}>
@@ -141,8 +162,11 @@ function AssessmentCard({ assessment: a }: { assessment: any }) {
               <div>
                 <div className="text-xs text-slate-400 mb-0.5">Price</div>
                 <span className={`text-sm font-medium ${priceDir === "increase" ? "text-red-600" : "text-green-600"}`}>
-                  {priceDir === "increase" ? "▲" : "▼"} {priceMag ?? "?"}%
+                  {priceDir === "increase" ? "▲" : "▼"} {priceMagText}%
                 </span>
+                {priceMagRange && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">range {priceMagRange}%</div>
+                )}
               </div>
             )}
           </div>

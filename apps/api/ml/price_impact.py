@@ -136,7 +136,14 @@ class PriceImpactEstimator:
         event_class: str,
         commodities: list[str],
     ) -> PriceImpactEstimate:
-        """Run XGBoost inference."""
+        """Run XGBoost inference.
+
+        Magnitude: from XGBRegressor (MAE ~6% vs mean target ~7.5%).
+        Direction: rule-based blend — 30-day commodity momentum dominates when
+        strong (>3%), otherwise falls back to event class prior. The XGBoost
+        direction classifier is not reliable enough for autonomous use on a
+        40-feature technical-only model.
+        """
         try:
             features = extract_features(payload, event_class)
             X = np.array([[features.get(f, 0.0) for f in self._feature_names]])
@@ -144,11 +151,29 @@ class PriceImpactEstimator:
             magnitude = float(self._magnitude_model.predict(X)[0])
             magnitude = max(0.0, min(30.0, magnitude))
 
-            dir_proba = self._direction_model.predict_proba(X)[0]
-            dir_class = int(np.argmax(dir_proba))
-            confidence = float(dir_proba[dir_class])
+            # Direction: momentum-first, then event class prior
+            move_30d = features.get("move_30d", 0.0)
+            move_1d  = features.get("move_1d", 0.0)
+            prior = EVENT_CLASS_PRIORS.get(event_class, EVENT_CLASS_PRIORS["other"])
 
-            # Feature contributions via XGBoost's built-in importance
+            if abs(move_30d) >= 3.0:
+                # Strong observed move — use its sign as direction
+                direction = "increase" if move_30d > 0 else "decrease"
+                dir_confidence = min(0.85, 0.55 + abs(move_30d) / 30.0)
+            elif abs(move_1d) >= 2.0:
+                direction = "increase" if move_1d > 0 else "decrease"
+                dir_confidence = 0.60
+            elif prior["direction_bias"] > 0:
+                direction = "increase"
+                dir_confidence = 0.55
+            elif prior["direction_bias"] < 0:
+                direction = "decrease"
+                dir_confidence = 0.55
+            else:
+                direction = "neutral"
+                dir_confidence = 0.50
+
+            # Feature contributions via XGBoost's built-in importance (magnitude model)
             contribs: dict[str, float] = {}
             try:
                 import xgboost as xgb
@@ -156,16 +181,16 @@ class PriceImpactEstimator:
                 raw_contribs = self._magnitude_model.get_booster().predict(
                     dmatrix, pred_contribs=True
                 )[0]
-                for name, val in zip(self._feature_names, raw_contribs[:-1]):  # last is bias
+                for name, val in zip(self._feature_names, raw_contribs[:-1]):
                     if abs(val) > 0.1:
                         contribs[name] = round(float(val), 3)
             except Exception:
                 pass
 
             return PriceImpactEstimate(
-                direction=DIRECTION_LABELS[dir_class],
+                direction=direction,
                 magnitude_pct=round(magnitude, 2),
-                confidence=round(confidence, 3),
+                confidence=round(dir_confidence, 3),
                 affected_commodities=commodities,
                 feature_contributions=contribs,
                 model_version="xgb_v1",

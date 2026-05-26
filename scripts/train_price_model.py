@@ -52,7 +52,13 @@ def build_dataset(lookback_years: int = 2):
             if df.empty:
                 logger.warning("[train] No data for %s — skipping", ticker)
                 continue
-            frames[ticker] = df[["Close"]].rename(columns={"Close": ticker})
+            # yfinance ≥0.2.x returns MultiIndex columns: ("Close", "TICKER")
+            # Flatten to a plain Series named after the ticker.
+            if isinstance(df.columns, pd.MultiIndex):
+                close_series = df["Close"].squeeze()  # DataFrame → Series
+            else:
+                close_series = df["Close"]
+            frames[ticker] = close_series.rename(ticker).to_frame()
             logger.info("[train]   %s: %d rows", ticker, len(df))
         except Exception as exc:
             logger.warning("[train] Failed to fetch %s: %s", ticker, exc)
@@ -77,8 +83,7 @@ def build_dataset(lookback_years: int = 2):
             "month": float(row_date.month),
         }
 
-        # Source / event class features: all zeros for price-series training
-        # (these get populated with real values in pipeline inference)
+        # Source / event class features
         for ec in ["commodity_price_move", "supplier_capacity", "demand_surge",
                    "logistics_disruption", "regulatory_trade", "financial_disclosure",
                    "geopolitical_disruption", "natural_disaster", "other"]:
@@ -89,9 +94,13 @@ def build_dataset(lookback_years: int = 2):
             row[f"source_{src}"] = 0.0
         row["source_prices"] = 1.0
 
-        # Payload price moves (all zeros for historical training rows)
-        for period in ("1d", "5d", "30d"):
-            row[f"move_{period}"] = 0.0
+        # Payload price moves — use primary commodity's actual returns so the model
+        # can learn the move→direction relationship from real price series.
+        # At inference time these are populated from the signal's moves_pct field.
+        primary_name = COMMODITY_TICKERS.get(primary_ticker, {}).get("name", "copper").lower()
+        row["move_1d"]  = row.get(f"{primary_name}_1d_pct", 0.0)
+        row["move_5d"]  = row.get(f"{primary_name}_5d_pct", 0.0)
+        row["move_30d"] = row.get(f"{primary_name}_30d_pct", 0.0)
 
         # Commodity momentum features
         for ticker, meta in COMMODITY_TICKERS.items():
@@ -119,15 +128,16 @@ def build_dataset(lookback_years: int = 2):
                 close.iloc[max(0, i - 30):i].pct_change().std() * 100
             ) if i >= 30 else 0.0
 
-        # Labels: 30-day forward return of primary commodity
+            # Labels: 30-day forward return of primary commodity
         c_now = float(prices[primary_ticker].iloc[i])
         c_fwd = float(prices[primary_ticker].iloc[i + 30])
         fwd_return_pct = (c_fwd - c_now) / c_now * 100 if c_now else 0.0
 
         row["target_magnitude"] = abs(fwd_return_pct)
-        if fwd_return_pct > 2.0:
+        # Tighter neutral band (±1%) gives more directional training signal
+        if fwd_return_pct > 1.0:
             row["target_direction"] = DIRECTION_LABEL_TO_INT["increase"]
-        elif fwd_return_pct < -2.0:
+        elif fwd_return_pct < -1.0:
             row["target_direction"] = DIRECTION_LABEL_TO_INT["decrease"]
         else:
             row["target_direction"] = DIRECTION_LABEL_TO_INT["neutral"]
@@ -181,18 +191,27 @@ def train_and_evaluate(df, test_months: int = 6):
                 mae, ym_test.mean())
 
     # ── Direction classifier ──────────────────────────────────────────────────
+    # Compute class weights to handle imbalance (neutral often dominates)
+    from collections import Counter
+    class_counts = Counter(yd_train.tolist())
+    total = len(yd_train)
+    n_classes = len(class_counts)
+    sample_weights = np.array([
+        total / (n_classes * class_counts[int(y)]) for y in yd_train
+    ])
+
     dir_model = xgb.XGBClassifier(
-        n_estimators=200,
+        n_estimators=300,
         max_depth=4,
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
-        use_label_encoder=False,
         eval_metric="mlogloss",
         random_state=42,
         verbosity=0,
     )
     dir_model.fit(X_train, yd_train,
+                  sample_weight=sample_weights,
                   eval_set=[(X_test, yd_test)],
                   verbose=False)
 

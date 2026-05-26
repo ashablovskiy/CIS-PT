@@ -1,4 +1,4 @@
-"""Inngest cron functions — schedule all 6 ingestion agents.
+"""Inngest cron functions — schedule all 6 ingestion agents + pipeline tasks.
 
 Cadences (per spec §8):
   prices_agent   — every 1 hour   (commodity markets)
@@ -7,6 +7,9 @@ Cadences (per spec §8):
   press_agent    — every 2 hours  (trade press RSS)
   demand_agent   — every 4 hours  (hyperscaler press rooms)
   sec_agent      — every 24 hours (SEC EDGAR filings)
+  assessment_fn  — every hour at :45 (impact assessment pipeline)
+  scout_fn       — daily at 03:00 UTC (daily intelligence brief)
+  optimizer_fn   — weekly on Sunday at 04:00 UTC (DSPy MIPROv2 reoptimization)
 
 Registration: imported in main.py and served at /api/inngest.
 """
@@ -169,8 +172,39 @@ async def scout_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
     return result
 
 
+# ── Weekly DSPy reoptimization cron — Sunday 04:00 UTC ───────────────────────
+
+@inngest_client.create_function(
+    fn_id="cis/dspy-optimizer",
+    trigger=inngest.TriggerCron(cron="0 4 * * 0"),  # weekly Sunday at 04:00 UTC
+    concurrency=[inngest.Concurrency(limit=1)],
+)
+async def optimizer_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
+    """Run MIPROv2 optimization loop on the latest feedback + bootstrap data.
+
+    Persists improved program to Neon and updates the 'latest' symlink
+    so the synthesizer auto-loads the improved prompts on next restart.
+    Only persists if improvement >= 0.03 over baseline.
+    """
+
+    async def run_optimizer() -> dict:
+        from apps.api.dspy_lab.optimizer import run_optimization
+        result = await run_optimization(auto="medium", min_improvement=0.03, seed=42)
+        return result
+
+    result = await step.run("run_optimizer", run_optimizer)
+    logger.info(
+        "[dspy_optimizer] Run complete: baseline=%.4f optimized=%.4f Δ=%.4f persisted=%s",
+        result.get("baseline_score", 0),
+        result.get("optimized_score", 0),
+        result.get("improvement", 0),
+        result.get("persisted", False),
+    )
+    return result
+
+
 # All functions for FastAPI registration
 ALL_FUNCTIONS = [
     prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn,
-    assessment_fn, scout_fn,
+    assessment_fn, scout_fn, optimizer_fn,
 ]

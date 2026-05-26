@@ -3,8 +3,9 @@
 Combines triage classification, Neo4j graph context, similar past signals,
 and contract clause matches into a structured impact assessment.
 
-Uses DSPy Predict with a typed Signature so Week 5 can compile it with
-MIPROv2 against category-manager feedback without changing this file.
+Uses DSPy Predict with a typed Signature compiled by MIPROv2 (Week 5).
+At startup, loads the latest compiled program from dspy_lab/compiled/ if
+available, falling back to the baseline predictor.
 """
 
 from __future__ import annotations
@@ -78,7 +79,18 @@ class ImpactAssessment(dspy.Signature):
     confidence: float = dspy.OutputField(desc="Overall confidence 0.0-1.0")
 
 
-_predictor = dspy.Predict(ImpactAssessment)
+def _load_predictor() -> dspy.Predict:
+    """Load compiled program if available, else return baseline predictor."""
+    try:
+        from apps.api.dspy_lab.optimizer import load_compiled_program
+        compiled = load_compiled_program()
+        if compiled is not None:
+            return compiled
+    except Exception as exc:
+        logger.debug("[synthesizer] Could not load compiled program: %s", exc)
+    return dspy.Predict(ImpactAssessment)
+
+_predictor = _load_predictor()
 
 
 def _triage_data(state: AssessmentState) -> dict[str, Any]:

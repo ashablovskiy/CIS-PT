@@ -161,7 +161,11 @@ class BaseIngestionAgent(ABC):
         if not state.pre_filtered:
             return state
 
-        batch_size = 10
+        # Smaller batches + more tokens: scorer v2 emits 5 fields per item
+        # (relevance, tier, impact_type, mechanism, reasoning) so a 10-item
+        # batch at 1024 tokens routinely truncates. 5 items / 2048 tokens
+        # leaves comfortable headroom (~400 tokens per item).
+        batch_size = 5
         scored: list[ScoredItem] = []
 
         for i in range(0, len(state.pre_filtered), batch_size):
@@ -183,7 +187,7 @@ class BaseIngestionAgent(ABC):
 
         response = await budgeted_client.messages_create(
             model=_HAIKU,
-            max_tokens=1024,
+            max_tokens=2048,
             system=await _prompt_registry.aget("relevance_scorer"),
             messages=[{"role": "user", "content": user_msg}],
         )

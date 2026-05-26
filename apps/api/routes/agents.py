@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from apps.api import agent_configs
-from apps.api.db.models import Signal, SignalRelevance
+from apps.api.db.models import AgentRun, Signal, SignalRelevance
 from apps.api.db.session import async_session_factory
 
 router = APIRouter()
@@ -36,25 +36,35 @@ _AGENT_MAP: dict[str, tuple[str, str]] = {
 async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[dict]:
     """Return per-source ingestion stats for the last N hours.
 
-    All 6 ingestion agents are ALWAYS included in the response — silent
-    agents return zeros + null last_seen so the UI can render their card.
+    All 6 ingestion agents are ALWAYS included in the response.
+    For each: signal counts from the `signals` table PLUS real run telemetry
+    from `agent_runs` (so "Last run" is honest even when the run produced
+    zero above-threshold signals — common under the strict scorer).
     """
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
 
-    # Seed with zero-stat entries for every known source so the response is
-    # always exactly len(_SOURCES) rows regardless of activity.
+    # Seed with zero-stat entries so the response is always len(_SOURCES) rows.
     by_source: dict[str, dict] = {
         src: {
-            "source":    src,
-            "total":     0,
-            "escalated": 0,
-            "discarded": 0,
-            "last_seen": None,
+            "source":     src,
+            "total":      0,
+            "escalated":  0,
+            "discarded":  0,
+            "last_seen":  None,        # last signal in DB
+            # Run telemetry (from agent_runs) — populated below
+            "last_run_at":     None,
+            "last_run_status": None,
+            "last_pulled":     None,
+            "last_passed_rules": None,
+            "last_passed_llm": None,
+            "last_classified": None,
+            "last_notes":      None,
         }
         for src in _SOURCES
     }
 
     async with async_session_factory() as session:
+        # ── Signal counts ──────────────────────────────────────────────────
         rows = await session.execute(
             select(
                 Signal.source,
@@ -66,10 +76,13 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
         )
         for source, total, last_seen in rows:
             if source not in by_source:
-                # Unknown source seen in DB — surface it anyway
                 by_source[source] = {
                     "source": source, "total": 0, "escalated": 0,
                     "discarded": 0, "last_seen": None,
+                    "last_run_at": None, "last_run_status": None,
+                    "last_pulled": None, "last_passed_rules": None,
+                    "last_passed_llm": None, "last_classified": None,
+                    "last_notes": None,
                 }
             by_source[source]["total"]     = total
             by_source[source]["last_seen"] = last_seen.isoformat() if last_seen else None
@@ -91,6 +104,28 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
                 by_source[source]["escalated"] = cnt
             elif decision == "discard":
                 by_source[source]["discarded"] = cnt
+
+        # ── Run telemetry: last AgentRun per source ────────────────────────
+        # agent_runs.agent_name uses pattern "{source}_agent" (set by the
+        # agent class constructor). Pull the latest finished run per source.
+        for source in by_source:
+            agent_name = f"{source}_agent"
+            run_row = (await session.execute(
+                select(AgentRun)
+                .where(AgentRun.agent_name == agent_name)
+                .order_by(AgentRun.started_at.desc().nullslast())
+                .limit(1)
+            )).scalar_one_or_none()
+            if run_row:
+                # Prefer finished_at, fall back to started_at
+                stamp = run_row.finished_at or run_row.started_at
+                by_source[source]["last_run_at"]      = stamp.isoformat() if stamp else None
+                by_source[source]["last_run_status"]  = run_row.status
+                by_source[source]["last_pulled"]      = run_row.items_pulled
+                by_source[source]["last_passed_rules"]= run_row.items_passed_rules
+                by_source[source]["last_passed_llm"]  = run_row.items_passed_llm
+                by_source[source]["last_classified"]  = run_row.items_classified
+                by_source[source]["last_notes"]       = run_row.notes
 
     # Preserve canonical _SOURCES ordering (prices, gdelt, logistics, press, demand, sec)
     return [by_source[src] for src in _SOURCES if src in by_source] + [
@@ -133,18 +168,31 @@ class RunRequest(BaseModel):
 
 
 async def _run_agent_bg(source: str, lookback_hours: int) -> None:
-    """Background task: import + run a single agent with custom lookback."""
+    """Background task: import + run a single agent with custom lookback.
+
+    Detailed logs go to the API stdout; structured results land in agent_runs
+    via the runner's own telemetry node, which is what the Agents UI displays.
+    """
     try:
         module_path, class_name = _AGENT_MAP[source]
         module = importlib.import_module(module_path)
         agent = getattr(module, class_name)()
         state = await agent.run(lookback_hours=lookback_hours)
         logger.info(
-            "[manual run] %s: pulled=%d escalated=%d errors=%s",
-            source, len(state.raw_items), len(state.escalated), state.errors,
+            "[manual run] %s: pulled=%d pre_filtered=%d llm_scored=%d "
+            "escalated=%d discarded=%d errors=%s",
+            source,
+            len(state.raw_items),
+            len(state.pre_filtered),
+            len(state.llm_scored),
+            len(state.escalated),
+            len(state.discarded),
+            state.errors,
         )
-    except Exception as exc:
-        logger.error("[manual run] %s failed: %s", source, exc)
+    except Exception:
+        # Keep the exception type + traceback in the API log so it can be
+        # tracked down — never silently swallow.
+        logger.exception("[manual run] %s failed", source)
 
 
 @router.post("/run/{source}")

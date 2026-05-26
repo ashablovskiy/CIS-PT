@@ -68,6 +68,14 @@ interface AgentStatus {
   escalated: number;
   discarded: number;
   last_seen: string | null;
+  // Run telemetry (populated from agent_runs)
+  last_run_at: string | null;
+  last_run_status: string | null;     // "ok" | "error" | "budget_exceeded"
+  last_pulled: number | null;
+  last_passed_rules: number | null;
+  last_passed_llm: number | null;
+  last_classified: number | null;
+  last_notes: string | null;
 }
 
 // ── Agent Card ────────────────────────────────────────────────────────────────
@@ -78,9 +86,6 @@ function AgentCard({ agent, config, onConfigChange }: {
   onConfigChange: () => void;
 }) {
   const meta = SOURCE_META[agent.source] ?? { label: agent.source, icon: "⚙️" };
-  const escalateRate = agent.total > 0
-    ? ((agent.escalated / agent.total) * 100).toFixed(1)
-    : "0";
 
   // Schedule editing state
   const [editSched, setEditSched] = useState(false);
@@ -164,42 +169,66 @@ function AgentCard({ agent, config, onConfigChange }: {
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <div
-            className={`w-2 h-2 rounded-full ${agent.last_seen ? "bg-green-400" : "bg-slate-200"}`}
-            title={agent.last_seen ? "Recently active" : "No activity"}
+            className={`w-2 h-2 rounded-full ${
+              agent.last_run_status === "error" ? "bg-red-500"
+              : agent.last_run_at ? "bg-green-400"
+              : "bg-slate-200"
+            }`}
+            title={
+              agent.last_run_status === "error" ? "Last run errored"
+              : agent.last_run_at ? "Recently ran"
+              : "Has not run yet"
+            }
           />
           <Toggle checked={enabled} onChange={handleToggle} disabled={togglingEnabled} />
         </div>
       </div>
 
-      {/* ── Metrics ── */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <Metric label="Total"     value={agent.total} />
-        <Metric label="Escalated" value={agent.escalated} highlight />
-        <Metric label="Discarded" value={agent.discarded} />
+      {/* ── Last-run telemetry (from agent_runs) ── */}
+      {/* This is the honest "did the agent actually run" indicator —
+          unlike signal counts, which only reflect items above the persist
+          threshold and are 0 when the scorer rejects everything as noise. */}
+      <div className="mb-4 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+            Last run
+          </span>
+          <span className="text-xs text-slate-500">
+            {agent.last_run_at
+              ? formatDistanceToNow(new Date(agent.last_run_at), { addSuffix: true })
+              : <span className="italic text-slate-400">never</span>}
+            {agent.last_run_status === "error" && (
+              <span className="ml-1.5 text-red-500 font-medium">· error</span>
+            )}
+          </span>
+        </div>
+        {agent.last_run_at ? (
+          <div className="flex items-center justify-between gap-1 text-xs">
+            <FunnelStep label="pulled"    value={agent.last_pulled} />
+            <FunnelArrow />
+            <FunnelStep label="filtered"  value={agent.last_passed_rules} />
+            <FunnelArrow />
+            <FunnelStep label="scored"    value={agent.last_passed_llm} />
+            <FunnelArrow />
+            <FunnelStep label="kept"      value={agent.last_classified} highlight />
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 italic">
+            Use "Run now" below to trigger first run
+          </div>
+        )}
+        {agent.last_notes && (
+          <div className="text-[10px] text-red-500 mt-1.5 truncate" title={agent.last_notes}>
+            {agent.last_notes}
+          </div>
+        )}
       </div>
 
-      {/* ── Escalation rate + last seen ── */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="text-xs text-slate-400 mb-1">Escalation rate</div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-red-400 rounded-full"
-                style={{ width: `${escalateRate}%` }}
-              />
-            </div>
-            <span className="text-xs text-slate-500">{escalateRate}%</span>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-xs text-slate-400">Last seen</div>
-          <div className="text-xs text-slate-600">
-            {agent.last_seen
-              ? formatDistanceToNow(new Date(agent.last_seen), { addSuffix: true })
-              : "Never"}
-          </div>
-        </div>
+      {/* ── Cumulative DB stats (last 24h) ── */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <Metric label="Stored 24h" value={agent.total} />
+        <Metric label="Escalated"  value={agent.escalated} highlight />
+        <Metric label="Discarded"  value={agent.discarded} />
       </div>
 
       {/* ── Controls ── */}
@@ -334,6 +363,27 @@ function Metric({ label, value, highlight }: {
       <div className="text-xs text-slate-400">{label}</div>
     </div>
   );
+}
+
+// ── Funnel step (used in Last-run block) ──────────────────────────────────────
+
+function FunnelStep({ label, value, highlight }: {
+  label: string;
+  value: number | null;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="text-center flex-1 min-w-0">
+      <div className={`text-sm font-bold ${highlight ? "text-red-600" : "text-slate-700"}`}>
+        {value ?? "—"}
+      </div>
+      <div className="text-[10px] text-slate-400">{label}</div>
+    </div>
+  );
+}
+
+function FunnelArrow() {
+  return <span className="text-slate-300 text-xs shrink-0">→</span>;
 }
 
 // ── Pipeline summary banner ───────────────────────────────────────────────────

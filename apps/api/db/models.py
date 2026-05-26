@@ -235,6 +235,33 @@ class DspyProgram(Base):
     )
 
 
+# ── Prompt Registry ───────────────────────────────────────────────────────────
+
+class PromptTemplate(Base):
+    """Versioned storage for all LLM system prompts.
+
+    One row per (name, version). Only one version per name is active at a time.
+    Consumers call registry.get_prompt(name) which serves the active version from cache.
+    """
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="uq_prompt_name_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    system_text: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_hint: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "haiku" | "opus"
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[str] = mapped_column(String, default="seed", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 # ── Agent telemetry ───────────────────────────────────────────────────────────
 
 class AgentRun(Base):

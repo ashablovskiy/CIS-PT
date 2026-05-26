@@ -16,30 +16,11 @@ import logging
 
 from apps.api.agents.state import AssessmentState
 from apps.api.budget import budgeted_client
+from apps.api.prompts.registry import registry as _prompt_registry
 
 logger = logging.getLogger(__name__)
 
 _HAIKU = "claude-haiku-4-5-20251001"
-
-_CRITIC_SYSTEM = """
-You are a quality-control reviewer for supply-chain risk assessments.
-
-Review the assessment below and respond with ONLY valid JSON:
-{
-  "passed": true/false,
-  "grounding_ok": true/false,
-  "clause_coverage_ok": true/false,
-  "calibration_ok": true/false,
-  "notes": "specific concerns or 'none'"
-}
-
-Rules:
-- passed = true only if all three sub-checks are true
-- grounding_ok = every reasoning step has a non-empty grounded_in field
-- clause_coverage_ok = triggered clauses reference at least one parsed_param value
-- calibration_ok = confidence >= 0.7 requires at least 2 specific entity names in affected_entities
-- If summary is empty or an error message, all checks fail
-""".strip()
 
 
 async def critic_node(state: AssessmentState) -> AssessmentState:
@@ -61,7 +42,7 @@ async def critic_node(state: AssessmentState) -> AssessmentState:
         response = await budgeted_client.messages_create(
             model=_HAIKU,
             max_tokens=256,
-            system=_CRITIC_SYSTEM,
+            system=await _prompt_registry.aget("critic"),
             messages=[{
                 "role": "user",
                 "content": f"Review this assessment:\n\n{json.dumps(assessment_snapshot, default=str)[:3000]}"

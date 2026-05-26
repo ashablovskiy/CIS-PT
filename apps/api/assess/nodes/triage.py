@@ -16,34 +16,11 @@ from apps.api.agents.state import AssessmentState
 from apps.api.budget import budgeted_client
 from apps.api.classify.schemas import ClassificationResult, EventClass
 from apps.api.ingest.keyword_registry import registry
+from apps.api.prompts.registry import registry as _prompt_registry
 
 logger = logging.getLogger(__name__)
 
 _HAIKU = "claude-haiku-4-5-20251001"
-
-_TRIAGE_SYSTEM = """
-You are a supply-chain risk classifier for a power transformer procurement system.
-
-Given a raw signal payload (JSON), extract structured information and classify the event.
-
-Return ONLY valid JSON matching this schema:
-{
-  "event_class": one of [commodity_price_move, geopolitical_disruption, supplier_capacity,
-                          logistics_disruption, regulatory_trade, demand_surge,
-                          financial_disclosure, natural_disaster, other],
-  "geo_tags": ["list of country/city names mentioned"],
-  "graph_entities": {
-    "suppliers": ["supplier names found"],
-    "commodities": ["commodity names found"],
-    "ports": ["port names found"],
-    "countries": ["country names found"]
-  },
-  "commodities": ["canonical commodity names: GOES, Copper, Aluminum, Mineral_Oil, etc."],
-  "impact_dimensions": ["list from: price, availability, lead_time, logistics, regulatory, demand"],
-  "confidence": 0.0-1.0,
-  "reasoning": "one sentence"
-}
-""".strip()
 
 
 def _extract_entity_hints(payload: dict) -> str:
@@ -71,7 +48,7 @@ async def triage_node(state: AssessmentState) -> AssessmentState:
         response = await budgeted_client.messages_create(
             model=_HAIKU,
             max_tokens=512,
-            system=_TRIAGE_SYSTEM,
+            system=await _prompt_registry.aget("triage_classifier"),
             messages=[{"role": "user", "content": f"Classify this signal:\n\n{signal_text}"}],
         )
         raw = response.content[0].text.strip()

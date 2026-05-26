@@ -22,41 +22,12 @@ from sqlalchemy import select, text
 
 from apps.api.db.models import ClassifiedSignal, DailyBrief, Signal, SignalRelevance
 from apps.api.db.session import async_session_factory
+from apps.api.prompts.registry import registry as _prompt_registry
 from apps.api.settings import settings
 
 logger = logging.getLogger(__name__)
 
 _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
-_BRIEF_SYSTEM = """\
-You are a senior supply-chain intelligence analyst for a power transformer procurement team.
-Your job is to write a concise daily intelligence brief from a set of market signals.
-
-Output format — strict Markdown:
-
-# CIS Daily Brief — DATE
-
-## Executive Summary
-2-3 sentences covering the most important developments today.
-
-## Themes
-For each theme (max 5), write a section like:
-### Theme Name
-- What happened (1-2 bullets)
-- Why it matters for power transformer procurement (1 bullet)
-- Signals: list source/title pairs
-
-## Watch List
-Up to 3 items needing closer monitoring or assessment.
-
-## No Action Required
-Brief list of signals monitored but not material today.
-
-Be specific about commodities (GOES, copper winding strip, transformer oil),
-suppliers (Siemens Energy, Hitachi Energy, GE Vernova, etc.), geographies,
-and contract clause implications (indexation triggers, force majeure, LD clauses).
-Keep total length under 600 words.\
-"""
 
 
 async def run_daily_scout(target_date: date | None = None) -> DailyBrief:
@@ -146,7 +117,7 @@ async def run_daily_scout(target_date: date | None = None) -> DailyBrief:
         response = await _client.messages.create(
             model="claude-opus-4-5-20251101",
             max_tokens=1500,
-            system=_BRIEF_SYSTEM,
+            system=await _prompt_registry.aget("daily_brief"),
             messages=[{"role": "user", "content": prompt}],
         )
         body_markdown = response.content[0].text

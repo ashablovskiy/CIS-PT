@@ -45,13 +45,14 @@ async def health() -> dict[str, str]:
 
 
 # ── Route registration ────────────────────────────────────────────────────────
-from apps.api.routes import agents, assessments, briefs, feedback, signals  # noqa: E402
+from apps.api.routes import agents, assessments, briefs, feedback, prompts, signals  # noqa: E402
 
 app.include_router(signals.router,     prefix="/api/signals",     tags=["signals"])
 app.include_router(assessments.router, prefix="/api/assessments", tags=["assessments"])
 app.include_router(briefs.router,      prefix="/api/briefs",      tags=["briefs"])
 app.include_router(agents.router,      prefix="/api/agents",      tags=["agents"])
 app.include_router(feedback.router,    prefix="/api/feedback",    tags=["feedback"])
+app.include_router(prompts.router,     prefix="/api/prompts",     tags=["admin"])
 
 
 if __name__ == "__main__":

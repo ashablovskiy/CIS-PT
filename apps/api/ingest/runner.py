@@ -28,6 +28,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from apps.api.budget import BudgetExceededError, budgeted_client
 from apps.api.db.models import AgentRun, Signal, SignalRelevance
 from apps.api.ingest.base import IngestionState, RawItem, ScoredItem
+from apps.api.prompts.registry import registry as _prompt_registry
 from apps.api.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -38,27 +39,6 @@ _HAIKU = "claude-haiku-4-5-20251001"
 # Routing thresholds (spec §8.3)
 _ESCALATE_THRESHOLD = 0.6
 _REVIEW_THRESHOLD = 0.3
-
-# Relevance scoring system prompt (cached across calls).
-_RELEVANCE_SYSTEM = textwrap.dedent("""
-    You score signals for relevance to a power transformer procurement intelligence system.
-
-    Score 0.0 (irrelevant) → 1.0 (highly relevant to power transformer sourcing risk).
-
-    Relevant signals include anything touching:
-    - Materials: GOES (grain-oriented electrical steel), copper, aluminum, mineral oil
-    - Suppliers: Siemens Energy, Hitachi Energy, GE Vernova, Hyundai Electric, Hyosung,
-      Mitsubishi Electric, WEG, POSCO, Nippon Steel, JFE Steel, Cleveland-Cliffs
-    - Logistics: Busan, Antwerp, Rotterdam, Bremerhaven, Norfolk, Savannah, Houston ports;
-      Korea→US, Japan→US, EU→US shipping lanes; heavy-lift vessel availability
-    - Demand: hyperscaler datacenter construction (Microsoft, Google, Amazon, Meta),
-      IRA grid modernization, REPowerEU
-    - Trade/regulatory: GOES export controls, steel tariffs, sanctions affecting suppliers
-    - Financial: capex disclosures from transformer OEMs or hyperscalers, backlog changes
-
-    Return ONLY a JSON array with one object per signal (same order as input):
-    [{"relevance": 0.0-1.0, "reasoning": "brief explanation"}]
-""").strip()
 
 
 def _content_hash(payload: dict[str, Any]) -> str:
@@ -204,7 +184,7 @@ class BaseIngestionAgent(ABC):
         response = await budgeted_client.messages_create(
             model=_HAIKU,
             max_tokens=1024,
-            system=_RELEVANCE_SYSTEM,
+            system=await _prompt_registry.aget("relevance_scorer"),
             messages=[{"role": "user", "content": user_msg}],
         )
 

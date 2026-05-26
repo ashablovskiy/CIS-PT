@@ -16,6 +16,7 @@ const NAV = [
   { href: "/signals", label: "Signals", icon: "📡" },
   { href: "/assessments", label: "Assessments", icon: "🔍" },
   { href: "/agents", label: "Agents", icon: "⚙️" },
+  { href: "/admin/prompts", label: "Prompts", icon: "✏️" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             ))}
           </nav>
           <div className="px-5 py-4 border-t border-slate-700 text-xs text-slate-600">
-            v0.4.0 — Week 4
+            v0.6.0 — Week 6
           </div>
         </aside>
 

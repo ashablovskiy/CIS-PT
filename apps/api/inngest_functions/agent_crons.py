@@ -22,6 +22,7 @@ import inngest
 import inngest.fast_api
 
 from apps.api import agent_configs as _agent_configs
+from apps.api import agent_runtime as _agent_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,11 @@ def _make_agent_fn(
             module = importlib.import_module(agent_import)
             AgentClass = getattr(module, agent_class)
             agent = AgentClass()
-            state = await agent.run(lookback_hours=lookback_hours)
+            _agent_runtime.register_run(source_key)
+            try:
+                state = await agent.run(lookback_hours=lookback_hours)
+            finally:
+                _agent_runtime.release_run(source_key)
             return {
                 "pulled": len(state.raw_items),
                 "pre_filtered": len(state.pre_filtered),

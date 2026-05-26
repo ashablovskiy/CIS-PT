@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from apps.api import agent_configs
+from apps.api import agent_configs, agent_runtime
 from apps.api.db.models import AgentRun, Signal, SignalRelevance
 from apps.api.db.session import async_session_factory
 
@@ -44,6 +44,7 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
 
     # Seed with zero-stat entries so the response is always len(_SOURCES) rows.
+    active = agent_runtime.snapshot()
     by_source: dict[str, dict] = {
         src: {
             "source":     src,
@@ -51,6 +52,9 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
             "escalated":  0,
             "discarded":  0,
             "last_seen":  None,        # last signal in DB
+            # Live status (from in-process runtime registry)
+            "is_running":     src in active,
+            "running_since":  active.get(src),
             # Run telemetry (from agent_runs) — populated below
             "last_run_at":     None,
             "last_run_status": None,
@@ -79,6 +83,8 @@ async def agents_status(hours: int = Query(default=24, ge=1, le=168)) -> list[di
                 by_source[source] = {
                     "source": source, "total": 0, "escalated": 0,
                     "discarded": 0, "last_seen": None,
+                    "is_running": source in active,
+                    "running_since": active.get(source),
                     "last_run_at": None, "last_run_status": None,
                     "last_pulled": None, "last_passed_rules": None,
                     "last_passed_llm": None, "last_classified": None,
@@ -170,9 +176,12 @@ class RunRequest(BaseModel):
 async def _run_agent_bg(source: str, lookback_hours: int) -> None:
     """Background task: import + run a single agent with custom lookback.
 
-    Detailed logs go to the API stdout; structured results land in agent_runs
-    via the runner's own telemetry node, which is what the Agents UI displays.
+    Registers the source in the live-runtime registry for the duration so
+    the Agents UI can show a 'running…' indicator. Detailed logs go to API
+    stdout; structured results land in agent_runs via the runner's telemetry
+    node.
     """
+    agent_runtime.register_run(source)
     try:
         module_path, class_name = _AGENT_MAP[source]
         module = importlib.import_module(module_path)
@@ -193,6 +202,8 @@ async def _run_agent_bg(source: str, lookback_hours: int) -> None:
         # Keep the exception type + traceback in the API log so it can be
         # tracked down — never silently swallow.
         logger.exception("[manual run] %s failed", source)
+    finally:
+        agent_runtime.release_run(source)
 
 
 @router.post("/run/{source}")

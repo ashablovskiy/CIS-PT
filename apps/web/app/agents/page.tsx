@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 
@@ -17,6 +17,32 @@ const SOURCE_META: Record<string, { label: string; icon: string }> = {
 };
 
 const INTERVAL_OPTIONS = [1, 2, 4, 6, 12, 24];
+
+// ── Live "running" badge ──────────────────────────────────────────────────────
+
+function RunningBadge({ since }: { since: string | null }) {
+  // Tick every second so the elapsed counter updates smoothly
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const elapsedSec = since
+    ? Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000))
+    : 0;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold
+      bg-blue-50 text-blue-700 border border-blue-200">
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+      </span>
+      Running · {elapsedSec}s
+    </span>
+  );
+}
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +94,9 @@ interface AgentStatus {
   escalated: number;
   discarded: number;
   last_seen: string | null;
+  // Live run state (from in-process runtime registry)
+  is_running: boolean;
+  running_since: string | null;
   // Run telemetry (populated from agent_runs)
   last_run_at: string | null;
   last_run_status: string | null;     // "ok" | "error" | "budget_exceeded"
@@ -154,11 +183,14 @@ function AgentCard({ agent, config, onConfigChange }: {
       ${enabled ? "" : "opacity-60"}`}>
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-4 gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="text-2xl shrink-0">{meta.icon}</div>
           <div className="min-w-0">
-            <div className="font-semibold text-slate-800 truncate">{meta.label}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800 truncate">{meta.label}</span>
+              {agent.is_running && <RunningBadge since={agent.running_since} />}
+            </div>
             <div className="text-xs text-slate-400 flex items-center gap-1.5">
               {formatSchedule(config)}
               {!enabled && (
@@ -167,15 +199,17 @@ function AgentCard({ agent, config, onConfigChange }: {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0 ml-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div
             className={`w-2 h-2 rounded-full ${
-              agent.last_run_status === "error" ? "bg-red-500"
+              agent.is_running ? "bg-blue-500 animate-pulse"
+              : agent.last_run_status === "error" ? "bg-red-500"
               : agent.last_run_at ? "bg-green-400"
               : "bg-slate-200"
             }`}
             title={
-              agent.last_run_status === "error" ? "Last run errored"
+              agent.is_running ? "Currently running"
+              : agent.last_run_status === "error" ? "Last run errored"
               : agent.last_run_at ? "Recently ran"
               : "Has not run yet"
             }
@@ -338,7 +372,9 @@ function AgentCard({ agent, config, onConfigChange }: {
         ) : (
           <button
             onClick={() => setRunOpen(true)}
-            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+            disabled={agent.is_running}
+            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200"
+            title={agent.is_running ? "Already running — wait for it to finish" : ""}
           >
             ▶ Run now
           </button>
@@ -422,11 +458,21 @@ function PipelineSummary({ data, configs }: { data: AgentStatus[]; configs: Reco
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AgentsPage() {
+  // Poll fast (3s) while any agent is running so the elapsed counter and
+  // funnel results refresh promptly; slow to 60s when idle.
+  const [pollMs, setPollMs] = useState(60_000);
+
   const { data: agents, isLoading } = useSWR<AgentStatus[]>(
     `${API}/api/agents/status?hours=24`,
     fetcher,
-    { refreshInterval: 60_000 }
+    { refreshInterval: pollMs }
   );
+
+  // Adjust poll cadence whenever the running-set changes
+  useEffect(() => {
+    const anyRunning = (agents ?? []).some((a) => a.is_running);
+    setPollMs(anyRunning ? 3_000 : 60_000);
+  }, [agents]);
 
   const { data: configs, mutate: mutateConfigs } = useSWR<Record<string, AgentConfig>>(
     `${API}/api/agents/config`,

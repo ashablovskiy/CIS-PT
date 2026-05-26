@@ -170,6 +170,38 @@ async def synthesizer_node(state: AssessmentState) -> AssessmentState:
         confidence = float(result.confidence) if result.confidence else 0.5
         confidence = max(0.0, min(1.0, confidence))
 
+        # ── XGBoost price impact enrichment ────────────────────────────────
+        # Augment the LLM's price dimension with a data-driven magnitude estimate.
+        # This runs even when the model falls back to rule-based estimation.
+        try:
+            from apps.api.ml.price_impact import price_impact_estimator
+            commodities = triage.get("commodities", [])
+            ml_estimate = price_impact_estimator.predict(
+                signal_payload=state.signal_payload,
+                event_class=event_class,
+                commodities=commodities or None,
+            )
+            # Merge ML estimate into the price dimension (only enrich, don't overwrite)
+            if "price" not in impact:
+                impact["price"] = {}
+            price_dim = impact["price"]
+            # Prefer LLM direction/magnitude if present; add ML as secondary signal
+            if not price_dim.get("direction"):
+                price_dim["direction"] = ml_estimate.direction
+            if not price_dim.get("magnitude_pct"):
+                price_dim["magnitude_pct"] = ml_estimate.magnitude_pct
+            price_dim["ml_magnitude_pct"] = ml_estimate.magnitude_pct
+            price_dim["ml_direction"] = ml_estimate.direction
+            price_dim["ml_confidence"] = ml_estimate.confidence
+            price_dim["ml_model"] = ml_estimate.model_version
+            price_dim["ml_used"] = ml_estimate.used_ml
+            logger.info(
+                "[synthesizer] ML price estimate: direction=%s magnitude=%.1f%% model=%s",
+                ml_estimate.direction, ml_estimate.magnitude_pct, ml_estimate.model_version,
+            )
+        except Exception as ml_exc:
+            logger.debug("[synthesizer] ML enrichment skipped: %s", ml_exc)
+
         state.summary = result.summary or ""
         state.affected_entities = affected_entities
         state.affected_clauses = affected_clauses if isinstance(affected_clauses, list) else []

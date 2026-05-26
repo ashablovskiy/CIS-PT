@@ -18,7 +18,7 @@ from typing import Any
 import dspy
 from sqlalchemy import select
 
-from apps.api.db.models import Assessment, Feedback, Signal
+from apps.api.db.models import Assessment, Signal
 from apps.api.db.session import async_session_factory
 
 logger = logging.getLogger(__name__)
@@ -462,64 +462,61 @@ BOOTSTRAP_EXAMPLES: list[dspy.Example] = [
 
 
 async def load_feedback_examples(min_accepted: int = 5) -> list[dspy.Example]:
-    """Pull analyst-accepted assessments from DB as DSPy training examples.
+    """Pull pre-built DspyTrainingExample rows written by the feedback route.
 
-    Only uses 'accept' feedback — rejected assessments are negative signal
-    (handled in the metric, not as positive training examples).
+    These are created automatically when an analyst accepts or edits an assessment
+    via POST /api/feedback. Each row has serialised inputs + expected_outputs that
+    mirror the ImpactAssessment Signature exactly, so we just deserialise them.
+
+    Returns [] if fewer than min_accepted rows exist (optimizer uses bootstrap only).
     """
+    from apps.api.db.models import DspyTrainingExample
+
     examples: list[dspy.Example] = []
 
     async with async_session_factory() as session:
         rows = await session.execute(
-            select(Feedback, Assessment, Signal)
-            .join(Assessment, Feedback.assessment_id == Assessment.id)
-            .outerjoin(Signal, Assessment.signal_id == Signal.id)
-            .where(Feedback.user_action == "accept")
-            .order_by(Feedback.created_at.desc())
-            .limit(50)
+            select(DspyTrainingExample)
+            .order_by(DspyTrainingExample.created_at.desc())
+            .limit(100)
         )
-        results = rows.fetchall()
+        te_rows = rows.scalars().all()
 
-    if len(results) < min_accepted:
+    if len(te_rows) < min_accepted:
         logger.info(
-            "[training_data] Only %d accepted feedback rows (need %d) — using bootstrap only",
-            len(results), min_accepted,
+            "[training_data] Only %d training examples in DB (need %d) — using bootstrap only",
+            len(te_rows), min_accepted,
         )
         return []
 
-    for fb, assessment, signal in results:
-        payload = (signal.raw_payload or {}) if signal else {}
-        original = fb.original_payload or {}
-        corrected = fb.corrected_payload or {}
+    for te in te_rows:
+        try:
+            inputs = te.inputs or {}
+            outputs = te.expected_outputs or {}
 
-        # Use corrected output if analyst edited, else original
-        summary = corrected.get("summary") or original.get("summary") or assessment.summary or ""
-        impact = corrected.get("impact") or original.get("impact") or assessment.impact or {}
+            ex = dspy.Example(
+                # Inputs
+                signal_summary=inputs.get("signal_summary", ""),
+                graph_context=inputs.get("graph_context", "{}"),
+                similar_past=inputs.get("similar_past", "[]"),
+                contract_clauses=inputs.get("contract_clauses", "[]"),
+                event_class=inputs.get("event_class", "other"),
+                impact_dimensions=inputs.get("impact_dimensions", "price, availability"),
+                # Expected outputs
+                summary=outputs.get("summary", ""),
+                affected_entities_json=outputs.get("affected_entities_json", "{}"),
+                affected_clauses_json=outputs.get("affected_clauses_json", "[]"),
+                impact_json=outputs.get("impact_json", "{}"),
+                reasoning_chain_json=outputs.get("reasoning_chain_json", "[]"),
+                confidence=float(outputs.get("confidence", 0.5)),
+            ).with_inputs("signal_summary", "graph_context", "similar_past",
+                          "contract_clauses", "event_class", "impact_dimensions")
 
-        ex = dspy.Example(
-            signal_summary=_payload_to_summary(payload, signal.source if signal else "unknown"),
-            graph_context=json.dumps([]),   # reconstructed from stored assessment
-            similar_past=json.dumps([]),
-            contract_clauses=json.dumps([]),
-            event_class=assessment.impact.get("event_class", "other") if assessment.impact else "other",
-            impact_dimensions="price, availability",
-            # Expected outputs from accepted/corrected assessment
-            summary=summary,
-            affected_entities_json=json.dumps(assessment.affected_entities or {}),
-            affected_clauses_json=json.dumps(
-                (assessment.affected_clauses or {}).get("clauses", [])
-            ),
-            impact_json=json.dumps(impact),
-            reasoning_chain_json=json.dumps(
-                [s for s in ((assessment.reasoning_chain or {}).get("steps", []))]
-            ),
-            confidence=assessment.confidence or 0.5,
-        ).with_inputs("signal_summary", "graph_context", "similar_past",
-                      "contract_clauses", "event_class", "impact_dimensions")
+            examples.append(ex)
+        except Exception as exc:
+            logger.warning("[training_data] Skipping malformed training example %s: %s", te.id, exc)
 
-        examples.append(ex)
-
-    logger.info("[training_data] Loaded %d feedback-based training examples", len(examples))
+    logger.info("[training_data] Loaded %d training examples from analyst feedback", len(examples))
     return examples
 
 

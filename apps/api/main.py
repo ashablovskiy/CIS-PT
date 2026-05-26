@@ -44,15 +44,14 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "environment": settings.environment}
 
 
-# ── Route registration (stubs — filled in per week) ──────────────────────────
-# from apps.api.routes import signals, assessments, contracts, briefs, agents, feedback, optimization
-# app.include_router(signals.router, prefix="/api/signals", tags=["signals"])
-# app.include_router(assessments.router, prefix="/api/assessments", tags=["assessments"])
-# app.include_router(contracts.router, prefix="/api/contracts", tags=["contracts"])
-# app.include_router(briefs.router, prefix="/api/briefs", tags=["briefs"])
-# app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
-# app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
-# app.include_router(optimization.router, prefix="/api/optimization", tags=["optimization"])
+# ── Route registration ────────────────────────────────────────────────────────
+from apps.api.routes import agents, assessments, briefs, feedback, signals  # noqa: E402
+
+app.include_router(signals.router,     prefix="/api/signals",     tags=["signals"])
+app.include_router(assessments.router, prefix="/api/assessments", tags=["assessments"])
+app.include_router(briefs.router,      prefix="/api/briefs",      tags=["briefs"])
+app.include_router(agents.router,      prefix="/api/agents",      tags=["agents"])
+app.include_router(feedback.router,    prefix="/api/feedback",    tags=["feedback"])
 
 
 if __name__ == "__main__":

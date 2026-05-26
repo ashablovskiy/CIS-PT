@@ -144,8 +144,33 @@ async def assessment_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
     return result
 
 
+# ── Daily Scout cron — 03:00 UTC every day ───────────────────────────────────
+
+@inngest_client.create_function(
+    fn_id="cis/daily-scout",
+    trigger=inngest.TriggerCron(cron="0 3 * * *"),  # daily at 03:00 UTC
+    concurrency=[inngest.Concurrency(limit=1)],
+)
+async def scout_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
+    """Generate daily intelligence brief from yesterday's escalated signals."""
+
+    async def run_scout() -> dict:
+        from apps.api.scout.daily_scout import run_daily_scout
+        brief = await run_daily_scout()
+        return {
+            "brief_date": str(brief.brief_date),
+            "signal_count": brief.signal_count or 0,
+            "themes": list((brief.themes or {}).keys()),
+            "flagged": len(brief.flagged_for_assessment or []),
+        }
+
+    result = await step.run("run_scout", run_scout)
+    logger.info("[daily_scout] Inngest run complete: %s", result)
+    return result
+
+
 # All functions for FastAPI registration
 ALL_FUNCTIONS = [
     prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn,
-    assessment_fn,
+    assessment_fn, scout_fn,
 ]

@@ -193,6 +193,25 @@ async def scout_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
     return result
 
 
+# ── Network state snapshot cron — every 6 hours ──────────────────────────────
+
+@inngest_client.create_function(
+    fn_id="cis/network-snapshot",
+    trigger=inngest.TriggerCron(cron="50 */6 * * *"),  # every 6h at :50
+    concurrency=[inngest.Concurrency(limit=1)],
+)
+async def network_snapshot_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
+    """Compute + persist a network-state snapshot (the state-estimation series)."""
+
+    async def run_snapshot() -> dict:
+        from apps.api.network.snapshot import take_snapshot
+        return await take_snapshot(window_hours=720)
+
+    result = await step.run("take_snapshot", run_snapshot)
+    logger.info("[network_snapshot] complete: %s", result)
+    return result
+
+
 # ── Weekly DSPy reoptimization cron — Sunday 04:00 UTC ───────────────────────
 
 @inngest_client.create_function(
@@ -227,5 +246,5 @@ async def optimizer_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
 # All functions for FastAPI registration
 ALL_FUNCTIONS = [
     prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn, ir_fn,
-    assessment_fn, scout_fn, optimizer_fn,
+    assessment_fn, scout_fn, network_snapshot_fn, optimizer_fn,
 ]

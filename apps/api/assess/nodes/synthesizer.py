@@ -125,6 +125,22 @@ async def synthesizer_node(state: AssessmentState) -> AssessmentState:
     # Build inputs
     graph_ctx = [c for c in state.graph_context if "_triage" not in c]
     signal_summary = _build_signal_summary(state)
+
+    # ── Network-state context: frame this signal by the ecosystem condition ──
+    # An identical signal means something different in a fragile vs. resilient
+    # network. We append a compact state line so the synthesizer can calibrate.
+    try:
+        from apps.api.network.state import compute_network_state
+        ns = await compute_network_state(window_hours=720, top_n=5)
+        top_actors = ", ".join(a["actor"] for a in ns["top_actors"][:4])
+        hotspots = ", ".join(h["actor"] for h in ns["hotspots"][:3]) or "none"
+        signal_summary += (
+            f" | NETWORK_STATE: {ns['health_label']} (fragility {ns['health_index']:.2f}); "
+            f"most-influential: {top_actors}; pressure hotspots: {hotspots}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[synthesizer] network state unavailable: %s", exc)
+
     graph_context_str = json.dumps(graph_ctx, default=str)[:3000]
     similar_past_str = json.dumps(state.similar_past, default=str)[:1500]
     contract_str = json.dumps(state.contract_matches, default=str)[:2000]

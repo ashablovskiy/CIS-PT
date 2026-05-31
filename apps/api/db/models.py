@@ -268,6 +268,57 @@ class PromptTemplate(Base):
     )
 
 
+# ── Network State Intelligence ────────────────────────────────────────────────
+
+class SignalActorLink(Base):
+    """Grounds a signal to a graph actor (Supplier, Commodity, Plant, …) with a
+    quantified pressure contribution. One row per (signal, actor).
+
+    Populated at ingest (direct matches from the scorer's graph-prior scan) and
+    during assessment (expanded matches from the graph_retriever walk). This is
+    the foundation of the Network State Engine: "how much pressure is on actor X."
+    """
+    __tablename__ = "signal_actor_link"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "actor_name", name="uq_signal_actor"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    signal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("signals.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    actor_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor_label: Mapped[str | None] = mapped_column(String, nullable=True)  # Supplier|Commodity|…
+    match_kind: Mapped[str] = mapped_column(String, nullable=False)  # direct | expanded
+    # Pressure this signal injects into the actor: effective_score × tier_weight × match_factor
+    pressure: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class NetworkSnapshot(Base):
+    """A point-in-time estimate of the industrial network's condition.
+
+    Computed every ~6h (and on demand) by the Network State Engine. The sequence
+    of snapshots is the state-estimation time series (and the future observation
+    series for an HMM forecasting layer).
+    """
+    __tablename__ = "network_snapshot"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    health_index: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0–1 fragility
+    health_label: Mapped[str | None] = mapped_column(String, nullable=True)  # resilient|constrained|fragile
+    top_actors_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)   # influence leaderboard
+    hotspots_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)     # pressure hotspots
+    bottlenecks_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # emerging bottlenecks
+    signal_window_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signal_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 # ── Agent telemetry ───────────────────────────────────────────────────────────
 
 class AgentRun(Base):

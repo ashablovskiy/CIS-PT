@@ -60,3 +60,6 @@ eval/report.md
 # LangSmith local cache
 .langsmith/
 .gstack/
+
+# Runtime agent config (per-environment, not source)
+apps/api/agent_configs.json

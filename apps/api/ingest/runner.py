@@ -371,6 +371,21 @@ class BaseIngestionAgent(ABC):
                     )
                     await session.execute(rel_stmt)
 
+                    # ── Network grounding: link signal → graph actors ──────────
+                    # Pressure = llm_score × tier_weight × match_factor.
+                    try:
+                        from apps.api.network.grounding import (
+                            links_from_payload, persist_links,
+                        )
+                        links = links_from_payload(
+                            item.raw_payload, scored.llm_score, scored.impact_tier
+                        )
+                        if links:
+                            await persist_links(session, signal_id, links)
+                    except Exception as exc:
+                        logger.debug("[%s] actor grounding skipped: %s",
+                                     self.agent_name, exc)
+
     async def _store_telemetry(self, state: IngestionState) -> None:
         cost = budgeted_client.daily_spend(_HAIKU)
         async with self._session_factory() as session:

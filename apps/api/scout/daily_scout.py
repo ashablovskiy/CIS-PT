@@ -105,12 +105,32 @@ async def run_daily_scout(target_date: date | None = None) -> DailyBrief:
 
     signal_context = "\n\n".join(context_blocks)
 
+    # ── Network state: lead the brief with ecosystem condition ────────────────
+    network_block = ""
+    try:
+        from apps.api.network.state import compute_network_state
+        ns = await compute_network_state(window_hours=720, top_n=5)
+        top = ", ".join(f"{a['actor']} ({a['influence']:.2f})" for a in ns["top_actors"][:5])
+        hot = ", ".join(h["actor"] for h in ns["hotspots"][:4]) or "none"
+        bot = ", ".join(b["actor"] for b in ns["bottlenecks"][:4]) or "none"
+        network_block = (
+            f"NETWORK STATE (open the brief with this ecosystem assessment):\n"
+            f"- Health: {ns['health_label'].upper()} (fragility {ns['health_index']:.2f})\n"
+            f"- Highest systemic influence: {top}\n"
+            f"- Pressure hotspots (converging signals): {hot}\n"
+            f"- Emerging bottlenecks: {bot}\n\n"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[scout] network state unavailable: %s", exc)
+
     # ── 4. Call Opus for brief generation ─────────────────────────────────────
     prompt = (
         f"Today's date: {target_date}\n"
         f"Total escalated signals: {len(signals_data)}\n\n"
+        f"{network_block}"
         f"Signals grouped by theme:\n\n{signal_context}\n\n"
-        "Write the daily intelligence brief now."
+        "Write the daily intelligence brief now. Open with the network-state "
+        "assessment, then cover the themes."
     )
 
     try:

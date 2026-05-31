@@ -1,9 +1,20 @@
-# RSS feeds for the press_agent.
+# RSS feeds for the press_agent — industry trade journalism.
+# Company- and material-specific tracking (Siemens Energy, POSCO, Reinhausen,
+# GOES mills, etc.) lives in ir_feeds.yml / the ir_agent, NOT here.
+#
 # Add/remove feeds here without touching Python code.
 # Format: name, url, tags (for rule-based pre-filter boosting)
-# Last verified: 2026-05-25
+# Last audited: 2026-05-29
+#
+# Audit notes (v2):
+#   - REMOVED oilprice_energy : oil-trading focus, mostly noise for transformers
+#   - REMOVED electrek        : EV/consumer-solar focus, low signal-to-noise on grid
+#   - ADDED   datacenter_dynamics : strongest dedicated data-center build/power source
+#   Kept set covers four lanes: grid/T&D industry, US utility+regulatory,
+#   raw-material supply, and the data-center demand wave.
 
 feeds:
+  # ── Grid / T&D / power industry ────────────────────────────────────────────
   - name: td_world
     url: https://www.tdworld.com/rss.xml
     tags: [transformers, grid, utility, t_and_d]
@@ -12,29 +23,28 @@ feeds:
     url: https://www.powermag.com/feed/
     tags: [power, generation, grid, transformer]
 
-  - name: utility_dive
-    url: https://www.utilitydive.com/feeds/news/
-    tags: [grid, utility, energy, regulatory]
-
   - name: powergrid_intl
     url: https://www.powergrid.com/feed/
     tags: [power, grid, transformer, utility]
 
-  - name: oilprice_energy
-    url: https://oilprice.com/rss/main
-    tags: [commodities, energy, oil, trade]
+  # ── US utility + regulatory / policy ───────────────────────────────────────
+  - name: utility_dive
+    url: https://www.utilitydive.com/feeds/news/
+    tags: [grid, utility, energy, regulatory]
 
+  # ── Raw materials (copper / steel supply news) ─────────────────────────────
   - name: mining_dot_com
     url: https://www.mining.com/feed/
-    tags: [copper, aluminum, steel, mining, commodities]
+    tags: [copper, steel, goes, mining, commodities]
+
+  # ── Data-center demand wave ────────────────────────────────────────────────
+  - name: datacenter_dynamics
+    url: https://www.datacenterdynamics.com/en/rss/
+    tags: [datacenter, hyperscaler, power, demand]
 
   - name: datacenter_knowledge
     url: https://www.datacenterknowledge.com/rss.xml
     tags: [datacenter, hyperscaler, demand, power]
-
-  - name: electrek
-    url: https://electrek.co/feed/
-    tags: [grid, renewables, ira, energy_transition]
 
   - name: semianalysis
     url: https://semianalysis.com/feed/

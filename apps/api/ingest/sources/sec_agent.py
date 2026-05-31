@@ -1,16 +1,28 @@
 """SEC EDGAR ingestion agent — 8-K / 10-K / 10-Q filings.
 
-Watched CIKs (transformer OEMs + hyperscalers for demand signals):
-  GE Vernova      1993009
-  Eaton           31277
-  Hubbell         48898
-  Microsoft       789019
-  Alphabet/Google 1652044
-  Amazon          1018724
-  Meta            1326801
+Watched CIKs, grouped by why they matter to power-transformer procurement.
+Only US-listed filers appear here; non-US OEMs/suppliers (Siemens Energy,
+Hitachi Energy, POSCO, Nippon Steel, Reinhausen) are covered by the ir_agent.
+
+  Grid / power equipment OEMs:
+    GE Vernova      1996810   (corrected from 1993009)
+    Eaton           31277
+    Hubbell         48898
+    nVent Electric  1720635
+    Vertiv          1674101   (DC power & thermal)
+    Quanta Services 1050915   (grid construction / interconnection)
+  Raw material — GOES:
+    Cleveland-Cliffs 764065   (the only US grain-oriented electrical-steel mill)
+  Hyperscalers / AI demand:
+    Microsoft       789019
+    Alphabet/Google 1652044
+    Amazon          1018724
+    Meta            1326801
+    Oracle          1341439   (OCI / Stargate)
+    CoreWeave       1769628   (AI datacenter)
 
 Uses the EDGAR submissions API (no auth required, 10 req/s limit).
-Cadence: every 4 hours.
+Cadence: daily.
 """
 
 from __future__ import annotations
@@ -32,13 +44,22 @@ EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 
 # CIK zero-padded to 10 digits → company name
 WATCHED_CIKS: dict[str, str] = {
-    "0001993009": "GE Vernova",
+    # Grid / power-equipment OEMs
+    "0001996810": "GE Vernova",
     "0000031277": "Eaton",
     "0000048898": "Hubbell",
+    "0001720635": "nVent Electric",
+    "0001674101": "Vertiv",
+    "0001050915": "Quanta Services",
+    # Raw material — GOES (only US producer)
+    "0000764065": "Cleveland-Cliffs",
+    # Hyperscalers / AI demand
     "0000789019": "Microsoft",
     "0001652044": "Alphabet",
     "0001018724": "Amazon",
     "0001326801": "Meta",
+    "0001341439": "Oracle",
+    "0001769628": "CoreWeave",
 }
 
 # Filing types to capture

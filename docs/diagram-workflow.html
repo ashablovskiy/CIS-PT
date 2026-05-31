@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CIS — High-Level Workflow</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #f7f6f3;
+    color: #1a1a1a;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 32px 64px;
+  }
+
+  .canvas {
+    width: 820px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── Header ── */
+  .header {
+    margin-bottom: 40px;
+  }
+  .header-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9b9a97;
+    margin-bottom: 6px;
+  }
+  .header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a1a;
+    letter-spacing: -0.3px;
+  }
+  .header-sub {
+    font-size: 13px;
+    color: #6b6b6b;
+    margin-top: 4px;
+  }
+
+  /* ── Layer card ── */
+  .layer {
+    position: relative;
+  }
+
+  .layer-card {
+    border: 1.5px solid #e3e2e0;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 20px 24px;
+    position: relative;
+  }
+
+  .layer-card.accent-blue  { border-color: #c8d8f0; background: #f5f8fd; }
+  .layer-card.accent-amber { border-color: #e8d5a3; background: #fdf9f0; }
+  .layer-card.accent-sage  { border-color: #bfd6c8; background: #f4faf6; }
+  .layer-card.accent-plum  { border-color: #d0c4e4; background: #f8f5fd; }
+  .layer-card.accent-coral { border-color: #e8c8c4; background: #fdf5f4; }
+  .layer-card.accent-teal  { border-color: #b8d8d8; background: #f3fafa; }
+
+  .layer-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #9b9a97;
+    margin-bottom: 10px;
+  }
+
+  .layer-tag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-blue  { background: #5b8dd9; }
+  .dot-amber { background: #c89a3a; }
+  .dot-sage  { background: #4a9e6e; }
+  .dot-plum  { background: #8b6bbf; }
+  .dot-coral { background: #c96a5e; }
+  .dot-teal  { background: #3a9999; }
+
+  .layer-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 14px;
+    letter-spacing: -0.2px;
+  }
+
+  /* ── Chips row ── */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #374151;
+    background: #ffffff;
+    border: 1.5px solid #e3e2e0;
+    white-space: nowrap;
+  }
+
+  .chip-icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  /* ── Pipeline steps ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-radius: 7px;
+    background: #ffffff;
+    border: 1.5px solid #e3e2e0;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .step-num {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #e3e2e0;
+    font-size: 10px;
+    font-weight: 700;
+    color: #6b6b6b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .step-arrow {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c4c3c0;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  /* ── Columns layout ── */
+  .cols {
+    display: grid;
+    gap: 10px;
+  }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+
+  .col-card {
+    background: #ffffff;
+    border: 1.5px solid #e3e2e0;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .col-card-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 6px;
+  }
+
+  .col-card-items {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .col-card-items li {
+    font-size: 11.5px;
+    color: #6b6b6b;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  .col-card-items li::before {
+    content: "–";
+    color: #c4c3c0;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* ── Connector arrow ── */
+  .connector {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 36px;
+    position: relative;
+  }
+
+  .connector-line {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: #d4d3d0;
+    transform: translateX(-50%);
+  }
+
+  .connector-arrow {
+    position: relative;
+    z-index: 1;
+    background: #f7f6f3;
+    padding: 0 6px;
+    font-size: 13px;
+    color: #9b9a97;
+    line-height: 1;
+  }
+
+  .connector-label {
+    position: absolute;
+    right: calc(50% + 14px);
+    font-size: 10px;
+    font-weight: 500;
+    color: #b0afa9;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Feedback band ── */
+  .feedback-band {
+    margin-top: 28px;
+    border: 1.5px dashed #d4d3d0;
+    border-radius: 10px;
+    padding: 16px 24px;
+    background: #fafaf9;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .feedback-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .feedback-text {
+    flex: 1;
+  }
+
+  .feedback-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 3px;
+  }
+
+  .feedback-desc {
+    font-size: 12px;
+    color: #6b6b6b;
+    line-height: 1.5;
+  }
+
+  .feedback-actions {
+    display: flex;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
+  .feedback-btn {
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border: 1.5px solid;
+    cursor: default;
+  }
+  .btn-accept { color: #3d7a55; border-color: #b8d6c4; background: #edf7f1; }
+  .btn-edit   { color: #7a6020; border-color: #d6c488; background: #fdf8e8; }
+  .btn-reject { color: #8b3a3a; border-color: #d6a8a8; background: #fdf0f0; }
+
+  /* ── Loop label ── */
+  .loop-hint {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    color: #b0afa9;
+  }
+  .loop-hint-line {
+    flex: 1;
+    height: 1px;
+    background: #e3e2e0;
+  }
+
+  /* ── Note text inside cards ── */
+  .note {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: #9b9a97;
+    font-style: italic;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-label">Contract Intelligence System</div>
+    <div class="header-title">How a market event becomes a procurement decision</div>
+    <div class="header-sub">High-level logic flow — sourcing team view</div>
+  </div>
+
+  <!-- ── Layer 1: Market Signals ── -->
+  <div class="layer">
+    <div class="layer-card accent-blue">
+      <div class="layer-tag">
+        <span class="layer-tag-dot dot-blue"></span>
+        Layer 1
+      </div>
+      <div class="layer-title">Real-World Market Signals</div>
+      <div class="chips">
+        <div class="chip"><span class="chip-icon">📰</span>Trade news &amp; press</div>
+        <div class="chip"><span class="chip-icon">💲</span>Commodity prices</div>
+        <div class="chip"><span class="chip-icon">🚢</span>Logistics &amp; freight</div>
+        <div class="chip"><span class="chip-icon">🌍</span>Geopolitical events</div>
+        <div class="chip"><span class="chip-icon">📋</span>Regulatory filings</div>
+        <div class="chip"><span class="chip-icon">⚡</span>Demand forecasts</div>
+      </div>
+      <div class="note">Continuous stream — hundreds of events per day across markets relevant to transformer procurement</div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow">↓</div>
+    <div class="connector-label">continuous ingestion</div>
+  </div>
+
+  <!-- ── Layer 2: Agentic Ingestion ── -->
+  <div class="layer">
+    <div class="layer-card accent-amber">
+      <div class="layer-tag">
+        <span class="layer-tag-dot dot-amber"></span>
+        Layer 2
+      </div>
+      <div class="layer-title">Agentic Ingestion &amp; Filtering</div>
+      <div class="chips">
+        <div class="chip"><span class="chip-icon">🤖</span>Specialised agents per signal type</div>
+        <div class="chip"><span class="chip-icon">🎯</span>Relevance scoring</div>
+        <div class="chip"><span class="chip-icon">🏷️</span>Entity recognition</div>
+        <div class="chip"><span class="chip-icon">📊</span>Price magnitude estimate</div>
+        <div class="chip"><span class="chip-icon">🗑️</span>Noise discard</div>
+      </div>
+      <div class="note">Only signals that touch known suppliers, commodities, or trade lanes proceed — everything else is discarded automatically</div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow">↓</div>
+    <div class="connector-label">escalated signals only</div>
+  </div>
+
+  <!-- ── Layer 3: Knowledge Store ── -->
+  <div class="layer">
+    <div class="layer-card accent-sage">
+      <div class="layer-tag">
+        <span class="layer-tag-dot dot-sage"></span>
+        Layer 3
+      </div>
+      <div class="layer-title">Knowledge Store</div>
+      <div class="cols cols-3">
+        <div class="col-card">
+          <div class="col-card-title">Supplier Graph</div>
+          <ul class="col-card-items">
+            <li>Who makes what, where</li>
+            <li>Plant → port → trade lane</li>
+            <li>Sub-tier dependencies</li>
+            <li>Country risk exposure</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <div class="col-card-title">Contract Library</div>
+          <ul class="col-card-items">
+            <li>Active supplier contracts</li>
+            <li>Price indexation clauses</li>
+            <li>Force majeure triggers</li>
+            <li>Delivery commitments</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <div class="col-card-title">Signal Memory</div>
+          <ul class="col-card-items">
+            <li>Historical signal archive</li>
+            <li>Semantic search index</li>
+            <li>Similar past events</li>
+            <li>Analyst corrections</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow">↓</div>
+    <div class="connector-label">context retrieval</div>
+  </div>
+
+  <!-- ── Layer 4: Reasoning ── -->
+  <div class="layer">
+    <div class="layer-card accent-plum">
+      <div class="layer-tag">
+        <span class="layer-tag-dot dot-plum"></span>
+        Layer 4
+      </div>
+      <div class="layer-title">Contract-Grounded Reasoning</div>
+      <div class="pipeline">
+        <div class="step">
+          <div class="step-num">1</div>
+          Classify signal
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          Map to suppliers
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          Find matching clauses
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">4</div>
+          Assess exposure
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">5</div>
+          Critic review
+        </div>
+      </div>
+      <div class="note">Every conclusion is traced back to a specific contract clause and a cited source — not a black-box score</div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow">↓</div>
+    <div class="connector-label">structured outputs</div>
+  </div>
+
+  <!-- ── Layer 5: Outputs ── -->
+  <div class="layer">
+    <div class="layer-card accent-coral">
+      <div class="layer-tag">
+        <span class="layer-tag-dot dot-coral"></span>
+        Layer 5
+      </div>
+      <div class="layer-title">Outputs for Sourcing Teams</div>
+      <div class="cols cols-3">
+        <div class="col-card">
+          <div class="col-card-title">Daily Scout Brief</div>
+          <ul class="col-card-items">
+            <li>Top signals of the day</li>
+            <li>What changed overnight</li>
+            <li>Recommended actions</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <div class="col-card-title">Impact Assessments</div>
+          <ul class="col-card-items">
+            <li>Which contracts are at risk</li>
+            <li>Clause-level citation</li>
+            <li>Cost exposure estimate</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <div class="col-card-title">Supplier Alerts</div>
+          <ul class="col-card-items">
+            <li>Force majeure signals</li>
+            <li>Lead-time disruptions</li>
+            <li>Price trigger breaches</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Feedback band ── -->
+  <div class="feedback-band">
+    <div class="feedback-icon">↺</div>
+    <div class="feedback-text">
+      <div class="feedback-title">Analyst Feedback Loop</div>
+      <div class="feedback-desc">
+        Every assessment is reviewed by a sourcing professional. Accept, edit, or reject decisions are logged and used to continuously improve reasoning quality — the system gets sharper with each interaction.
+      </div>
+    </div>
+    <div class="feedback-actions">
+      <div class="feedback-btn btn-accept">Accept</div>
+      <div class="feedback-btn btn-edit">Needs edit</div>
+      <div class="feedback-btn btn-reject">Reject</div>
+    </div>
+  </div>
+
+  <div class="loop-hint">
+    <div class="loop-hint-line"></div>
+    <span>Analyst decisions flow back into Knowledge Store and sharpen future reasoning</span>
+    <div class="loop-hint-line"></div>
+  </div>
+
+</div>
+</body>
+</html>

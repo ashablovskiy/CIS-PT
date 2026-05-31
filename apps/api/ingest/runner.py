@@ -28,10 +28,27 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from apps.api.budget import BudgetExceededError, budgeted_client
 from apps.api.db.models import AgentRun, Signal, SignalRelevance
 from apps.api.ingest.base import IngestionState, RawItem, ScoredItem
+from apps.api.ingest.keyword_registry import registry as _kw_registry
 from apps.api.prompts.registry import registry as _prompt_registry
 from apps.api.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _top_graph_priors(text: str, priors: dict[str, dict], max_n: int = 3) -> list[dict]:
+    """Return the top-N highest-weight graph entities mentioned in `text`.
+
+    Scans `priors` (keyword → entity_meta from KeywordRegistry.get_entity_priors())
+    against the signal text.  De-duplicated by entity name — the same entity
+    matched via different aliases counts once, keeping the highest weight.
+    """
+    seen: dict[str, dict] = {}
+    for kw, meta in priors.items():
+        if kw in text:
+            name = meta["name"]
+            if name not in seen or meta["impact_weight"] > seen[name]["impact_weight"]:
+                seen[name] = meta
+    return sorted(seen.values(), key=lambda m: m["impact_weight"], reverse=True)[:max_n]
 
 # Haiku model used for all relevance scoring.
 _HAIKU = "claude-haiku-4-5-20251001"
@@ -178,10 +195,24 @@ class BaseIngestionAgent(ABC):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _score_batch(self, items: list[RawItem]) -> list[ScoredItem]:
+        entity_priors = _kw_registry.get_entity_priors()
+
         descriptions = []
         for idx, item in enumerate(items):
             payload_str = json.dumps(item.raw_payload, default=str)[:300]
-            descriptions.append(f"{idx+1}. source={item.source} url={item.url or 'n/a'}\n{payload_str}")
+            # Scan the full (but capped) payload text for graph entity matches.
+            # This is the same text blob used by the rule pre-filter, just longer.
+            text_blob = json.dumps(item.raw_payload, default=str)[:2000].lower()
+            top = _top_graph_priors(text_blob, entity_priors)
+
+            desc = f"{idx+1}. source={item.source} url={item.url or 'n/a'}\n{payload_str}"
+            if top:
+                priors_str = ", ".join(
+                    f"{m['name']} ({m['label']}, {m['criticality']}, w={m['impact_weight']:.2f})"
+                    for m in top
+                )
+                desc += f"\n[graph_priors: {priors_str}]"
+            descriptions.append(desc)
 
         user_msg = "Score each signal:\n\n" + "\n\n---\n\n".join(descriptions)
 

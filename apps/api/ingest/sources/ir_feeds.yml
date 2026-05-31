@@ -1,0 +1,86 @@
+# Investor-relations / corporate-news feeds for the ir_agent.
+#
+# These are the non-US OEMs and the critical component / material suppliers that
+# have NO EDGAR obligation (so the sec_agent can't see them) and mostly no clean
+# native RSS. We track them via scoped Google News RSS queries, which aggregate
+# their capacity announcements, earnings/guidance, shareholder updates, supply
+# disruptions and capex — the high-value Tier 1-2 signals.
+#
+# Each entry:
+#   company       display name (also used as DemandSource/Supplier match)
+#   entity_type   oem | goes_mill | component | insulation | oil
+#   news_query    Google News query string (scoped to relevant news)
+#   native_rss    (optional) list of native RSS URLs to ALSO pull
+#
+# Keep this list focused on the binding chain. Add a company only if its news
+# would plausibly move transformer cost or lead time.
+# Last audited: 2026-05-29
+
+entries:
+  # ── Tier-1 power-transformer OEMs (non-US) ─────────────────────────────────
+  - company: Siemens Energy
+    entity_type: oem
+    news_query: '"Siemens Energy" (transformer OR grid OR capacity OR earnings OR guidance OR backlog OR investment)'
+  - company: Hitachi Energy
+    entity_type: oem
+    news_query: '"Hitachi Energy" (transformer OR capacity OR investment OR factory OR backlog OR order)'
+  - company: Hyundai Electric
+    entity_type: oem
+    news_query: '"Hyundai Electric" (transformer OR capacity OR plant OR order OR earnings)'
+  - company: Hyosung Heavy Industries
+    entity_type: oem
+    news_query: '"Hyosung" (transformer OR "heavy industries" OR capacity OR plant OR order)'
+  - company: Mitsubishi Electric
+    entity_type: oem
+    news_query: '"Mitsubishi Electric" (transformer OR "power grid" OR capacity OR substation)'
+  - company: Toshiba Energy Systems
+    entity_type: oem
+    news_query: '"Toshiba" (transformer OR "energy systems" OR "power grid" OR substation)'
+  - company: TBEA
+    entity_type: oem
+    news_query: 'TBEA (transformer OR HVDC OR capacity OR export OR order)'
+  - company: WEG
+    entity_type: oem
+    news_query: '"WEG" (transformer OR "power equipment" OR capacity OR plant) Brazil'
+  - company: SGB-SMIT
+    entity_type: oem
+    news_query: '"SGB-SMIT" OR ("SGB" transformer) (capacity OR plant OR order)'
+  - company: CG Power
+    entity_type: oem
+    news_query: '"CG Power" (transformer OR capacity OR order OR earnings)'
+
+  # ── GOES mills / electrical steel ──────────────────────────────────────────
+  - company: POSCO
+    entity_type: goes_mill
+    news_query: 'POSCO ("electrical steel" OR GOES OR "grain-oriented" OR transformer)'
+  - company: Nippon Steel
+    entity_type: goes_mill
+    news_query: '"Nippon Steel" ("electrical steel" OR GOES OR "grain-oriented" OR transformer)'
+  - company: JFE Steel
+    entity_type: goes_mill
+    news_query: '"JFE Steel" ("electrical steel" OR GOES OR "grain-oriented")'
+  - company: ThyssenKrupp Electrical Steel
+    entity_type: goes_mill
+    news_query: '("thyssenkrupp electrical steel" OR PowerCore OR "thyssenkrupp" "electrical steel")'
+  - company: Baowu / Baosteel
+    entity_type: goes_mill
+    news_query: '(Baowu OR Baosteel) ("electrical steel" OR "grain-oriented" OR GOES)'
+
+  # ── Critical components (the build-schedule bottlenecks) ────────────────────
+  - company: Reinhausen
+    entity_type: component
+    news_query: '(Reinhausen OR "Maschinenfabrik Reinhausen") ("tap changer" OR OLTC OR transformer OR capacity OR "lead time")'
+  - company: Trench Group
+    entity_type: component
+    news_query: '("Trench Group" OR "Trench" bushing) (bushing OR transformer OR capacity)'
+
+  # ── Insulation & oil ───────────────────────────────────────────────────────
+  - company: Weidmann
+    entity_type: insulation
+    news_query: '"Weidmann" (pressboard OR transformer OR insulation OR capacity)'
+  - company: DuPont Nomex
+    entity_type: insulation
+    news_query: '(DuPont Nomex OR "aramid paper") (transformer OR insulation OR capacity)'
+  - company: Nynas
+    entity_type: oil
+    news_query: '"Nynas" ("transformer oil" OR naphthenic OR "base oil" OR supply)'

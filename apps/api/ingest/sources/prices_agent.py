@@ -1,14 +1,16 @@
 """Prices ingestion agent — yfinance commodity price moves.
 
-Tickers watched:
-  HG=F  COMEX Copper (LME-correlated proxy)
-  ALI=F Aluminum
-  HRC=F US Midwest hot-rolled coil (GOES / steel proxy)
-  CL=F  WTI Crude (freight fuel proxy)
-  ^BDI  Baltic Dry Index (bulk shipping tightness)
+Tickers watched (deliberately narrow — only the materials that move a power
+transformer's cost or lead time):
+  HG=F  COMEX Copper (LME-correlated proxy)        — winding metal
+  HRC=F US Midwest hot-rolled coil (GOES proxy)    — core steel proxy
+  CL=F  WTI Crude (freight / naphthenic-oil proxy) — transformer oil + freight
+
+Dropped vs. v1: ALI=F (aluminum — low impact for large power transformers) and
+^BDI (Baltic Dry Index — weak logistics proxy; heavy-lift, not bulk, moves PTs).
 
 Flags signals where single-day move ≥ 2%, 5-day ≥ 5%, or 30-day ≥ 10%.
-Cadence: every 15 minutes.
+Cadence: every hour.
 """
 
 from __future__ import annotations
@@ -25,11 +27,9 @@ from apps.api.ingest.runner import BaseIngestionAgent
 logger = logging.getLogger(__name__)
 
 TICKERS: dict[str, dict[str, Any]] = {
-    "HG=F":  {"commodity": "Copper",   "label": "COMEX Copper Futures",           "category": "non_ferrous"},
-    "ALI=F": {"commodity": "Aluminum",  "label": "CME Aluminum Futures",            "category": "non_ferrous"},
+    "HG=F":  {"commodity": "Copper",    "label": "COMEX Copper Futures",              "category": "non_ferrous"},
     "HRC=F": {"commodity": "GOES",      "label": "US Midwest HRC (GOES steel proxy)", "category": "ferrous"},
-    "CL=F":  {"commodity": "Crude_Oil", "label": "WTI Crude Oil Futures",          "category": "freight_proxy"},
-    "^BDI":  {"commodity": "BDI",       "label": "Baltic Dry Index",               "category": "logistics"},
+    "CL=F":  {"commodity": "Crude_Oil", "label": "WTI Crude Oil Futures",             "category": "freight_proxy"},
 }
 
 # Threshold: |move| must exceed this to be flagged as a signal.
@@ -50,7 +50,7 @@ class PricesAgent(BaseIngestionAgent):
 
     def keyword_rules(self) -> list[str]:
         # Price moves are always relevant to our categories — pass all through.
-        return ["copper", "aluminum", "steel", "goes", "hrc", "bdi", "crude", "freight"]
+        return ["copper", "steel", "goes", "hrc", "crude", "oil", "freight"]
 
     async def pull(self, window: tuple[datetime, datetime]) -> list[RawItem]:
         items: list[RawItem] = []

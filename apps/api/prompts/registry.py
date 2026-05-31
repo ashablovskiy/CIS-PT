@@ -91,6 +91,25 @@ Pick exactly ONE that best describes the mechanism. If none fit, return "No TP i
   "Macro proxy"              Crude, BDI, general steel — proxy with weak linkage
   "No TP impact"             Tier 4 — no mechanism on power-transformer chain
 
+═══ GRAPH PRIORS (when present) ═══
+
+Some signals include a [graph_priors] line listing supply-chain entities matched
+from the knowledge graph, with their label, validated criticality, and impact weight.
+
+Use them as a Bayesian prior on tier placement:
+  weight ≥ 0.85  (critical)  → strong signal for Tier 1–2, if the signal discusses
+                                that entity materially — not just a passing mention
+  weight 0.60–0.84 (high)    → lean toward Tier 2 if a plausible impact mechanism exists
+  weight 0.40–0.59 (medium)  → slight upward nudge; do not override your tier without
+                                independent evidence in the signal text
+  weight < 0.40  (low)       → ignore for tier purposes
+
+Graph-prior rules:
+- A critical entity mentioned in passing in an unrelated context → still Tier 4
+- Multiple high-weight entities in the same signal → cumulative signal toward Tier 2
+- If [graph_priors] is absent → no prior; apply tier definitions as normal
+- The prior informs; it does not override domain judgment
+
 ═══ OUTPUT FORMAT ═══
 
 Return ONLY a JSON array, one object per input signal in the same order:

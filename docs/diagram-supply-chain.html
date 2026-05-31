@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Power Transformer — Supply-Chain Bottleneck Map</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #f7f6f3;
+    color: #1a1a1a;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 32px 72px;
+  }
+
+  .wrap { width: 860px; }
+
+  /* ── Header ── */
+  .header { margin-bottom: 22px; }
+  .header-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #9b9a97; margin-bottom: 6px;
+  }
+  .header-title {
+    font-size: 22px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.3px;
+  }
+  .header-sub { font-size: 13.5px; color: #6b6b6b; margin-top: 8px; line-height: 1.55; }
+  .header-sub b { color: #b07a1e; font-weight: 600; }
+
+  /* ── Diagram frame ── */
+  .frame {
+    border: 1.5px solid #e3e2e0;
+    border-radius: 12px;
+    background: #fbfaf8;
+    padding: 14px 18px 18px;
+  }
+
+  .stage { position: relative; width: 820px; height: 648px; margin: 0 auto; }
+  .stage svg { position: absolute; inset: 0; width: 820px; height: 648px; z-index: 1; overflow: visible; }
+
+  /* ── Band labels ── */
+  .band {
+    position: absolute; z-index: 2;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #a8a7a3;
+  }
+
+  /* ── Node boxes ── */
+  .node {
+    position: absolute; z-index: 2;
+    width: 220px; height: 62px;
+    border: 1.5px solid #e3e2e0; border-radius: 10px;
+    background: #fff; padding: 10px 14px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .node .n-title { font-size: 14px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.2px; }
+  .node .n-sub   { font-size: 11px; color: #7c7b77; margin-top: 3px; }
+
+  .n-sage  { border-color: #bfd6c8; background: #f4faf6; }
+  .n-amber { border-color: #e8d5a3; background: #fdf9f0; }
+  .n-plum  { border-color: #d0c4e4; background: #f8f5fd; }
+  .n-coral { border-color: #e8c8c4; background: #fdf5f4; }
+  .n-blue  { border-color: #c8d8f0; background: #f5f8fd; border-style: dashed; }
+
+  .node.wide { width: 220px; }
+
+  /* ── Arrows ── */
+  .arrow { fill: none; stroke-linecap: round; transition: opacity .15s, stroke-width .15s; }
+  .a-crit { stroke: #c0563f; stroke-width: 2.6; }
+  .a-elev { stroke: #c89a3a; stroke-width: 2.1; }
+  .a-amp  { stroke: #c89a3a; stroke-width: 2.1; stroke-dasharray: 6 5; }
+  .hit { fill: none; stroke: transparent; stroke-width: 18; cursor: pointer; }
+  svg.dimmed .arrow { opacity: 0.22; }
+  svg.dimmed .arrow.sel { opacity: 1; stroke-width: 3.4; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    margin-top: 6px; padding: 12px 16px 2px;
+  }
+  .leg { display: flex; align-items: center; gap: 9px; font-size: 12px; color: #5c5b57; }
+  .leg svg { width: 38px; height: 12px; overflow: visible; }
+  .leg b { font-weight: 600; color: #2c2b28; }
+
+  /* ── Detail panel ── */
+  .detail {
+    margin-top: 14px; border: 1.5px solid #e3e2e0; border-radius: 10px;
+    background: #faf9f7; padding: 15px 18px; min-height: 78px;
+    transition: border-color .15s, background .15s;
+  }
+  .detail.active { background: #fff; }
+  .detail.lvl-crit.active { border-color: #e3b6aa; }
+  .detail.lvl-elev.active { border-color: #e8d5a3; }
+  .detail.lvl-amp.active  { border-color: #c8d8f0; }
+  .d-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+  .d-pill {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px; border: 1.5px solid;
+  }
+  .p-crit { color: #a3402c; border-color: #e3b6aa; background: #fbeee9; }
+  .p-elev { color: #8a6a1c; border-color: #e8d5a3; background: #fdf8e8; }
+  .p-amp  { color: #3f6090; border-color: #c8d8f0; background: #eef3fb; }
+  .d-title { font-size: 13.5px; font-weight: 700; color: #1a1a1a; }
+  .d-body  { font-size: 12.5px; color: #5c5b57; line-height: 1.6; }
+  .d-hint  { font-size: 12.5px; color: #9b9a97; font-style: italic; }
+
+  /* ── Prose ── */
+  .prose { margin-top: 26px; }
+  .prose p { font-size: 14px; color: #2f2e2b; line-height: 1.7; margin-bottom: 14px; }
+  .prose p b { font-weight: 600; }
+  .prose .omit {
+    font-size: 13px; color: #6b6b6b; line-height: 1.65;
+    border-left: 3px solid #d4d3d0; padding: 6px 0 6px 14px; margin-top: 4px;
+  }
+
+  /* ── Follow-up pills ── */
+  .pills { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .pill {
+    padding: 9px 16px; border-radius: 8px; border: 1.5px solid #e3e2e0;
+    background: #fff; font-size: 13px; font-weight: 600; color: #3a3a38; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .pill:hover { border-color: #c4c3c0; background: #faf9f7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-label">Power Transformer Intelligence</div>
+    <div class="header-title">Where a large power transformer actually gets stuck</div>
+    <div class="header-sub">
+      The chain from raw material to an energised unit. Arrows are colour-coded by how much they
+      constrain cost and lead time — <b>red arrows are the binding bottlenecks</b>, amber are real but
+      softer constraints.
+    </div>
+  </div>
+
+  <!-- Diagram -->
+  <div class="frame">
+    <div class="stage">
+
+      <!-- Band labels (left-margin swim-lane labels, consistent column) -->
+      <div class="band" style="left:55px; top:48px;">Raw materials</div>
+      <div class="band" style="left:55px; top:216px;">Components</div>
+      <div class="band" style="left:55px; top:384px;">Assembly</div>
+      <div class="band" style="left:55px; top:536px;">Delivery</div>
+
+      <!-- Arrows (SVG) -->
+      <svg id="svg" viewBox="0 0 820 690">
+        <defs>
+          <marker id="ah-crit" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#c0563f"/>
+          </marker>
+          <marker id="ah-elev" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#c89a3a"/>
+          </marker>
+        </defs>
+
+        <!-- visible arrows -->
+        <path id="a1" class="arrow a-crit" marker-end="url(#ah-crit)" d="M165,136 L165,236"/>
+        <path id="a2" class="arrow a-elev" marker-end="url(#ah-elev)" d="M360,136 C300,185 285,205 248,236"/>
+        <path id="a3" class="arrow a-elev" marker-end="url(#ah-elev)" d="M632,136 C592,240 548,335 502,404"/>
+        <path id="a4" class="arrow a-crit" marker-end="url(#ah-crit)" d="M182,304 C242,352 300,372 336,405"/>
+        <path id="a5" class="arrow a-crit" marker-end="url(#ah-crit)" d="M410,304 L410,404"/>
+        <path id="a6" class="arrow a-amp"  marker-end="url(#ah-elev)" d="M543,439 L524,439"/>
+        <path id="a7" class="arrow a-elev" marker-end="url(#ah-elev)" d="M410,472 L410,556"/>
+        <path id="a8" class="arrow a-elev" marker-end="url(#ah-elev)" d="M520,591 L543,591"/>
+
+        <!-- transparent hit areas -->
+        <path class="hit" data-a="a1" d="M165,136 L165,236"/>
+        <path class="hit" data-a="a2" d="M360,136 C300,185 285,205 248,236"/>
+        <path class="hit" data-a="a3" d="M632,136 C592,240 548,335 502,404"/>
+        <path class="hit" data-a="a4" d="M182,304 C242,352 300,372 336,405"/>
+        <path class="hit" data-a="a5" d="M410,304 L410,404"/>
+        <path class="hit" data-a="a6" d="M543,439 L524,439"/>
+        <path class="hit" data-a="a7" d="M410,472 L410,556"/>
+        <path class="hit" data-a="a8" d="M520,591 L543,591"/>
+      </svg>
+
+      <!-- Nodes -->
+      <div class="node n-sage"  style="left:55px;  top:72px;">
+        <div class="n-title">GOES electrical steel</div>
+        <div class="n-sub">Nippon · POSCO · TKES · Cliffs</div>
+      </div>
+      <div class="node n-sage"  style="left:300px; top:72px;">
+        <div class="n-title">Copper</div>
+        <div class="n-sub">CTC winding conductor</div>
+      </div>
+      <div class="node n-sage"  style="left:545px; top:72px;">
+        <div class="n-title">Insulation &amp; oil</div>
+        <div class="n-sub">Weidmann · Nynas · DuPont</div>
+      </div>
+
+      <div class="node n-amber" style="left:55px;  top:240px;">
+        <div class="n-title">Core &amp; windings</div>
+        <div class="n-sub">stacking · coil winding</div>
+      </div>
+      <div class="node n-amber" style="left:300px; top:240px;">
+        <div class="n-title">Tap changers &amp; bushings</div>
+        <div class="n-sub">Reinhausen · Trench</div>
+      </div>
+
+      <div class="node n-plum wide" style="left:300px; top:408px;">
+        <div class="n-title">OEM assembly &amp; test</div>
+        <div class="n-sub">Hitachi · Siemens · Hyundai · GE</div>
+      </div>
+      <div class="node n-blue"  style="left:545px; top:408px;">
+        <div class="n-title">Demand pull</div>
+        <div class="n-sub">data centers · grid · renewables</div>
+      </div>
+
+      <div class="node n-coral" style="left:300px; top:560px;">
+        <div class="n-title">Heavy-lift logistics</div>
+        <div class="n-sub">vessels · Schnabel · permits</div>
+      </div>
+      <div class="node n-coral" style="left:545px; top:560px;">
+        <div class="n-title">Energised transformer</div>
+        <div class="n-sub">commissioned on the grid</div>
+      </div>
+
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="leg">
+        <svg viewBox="0 0 38 12"><line x1="2" y1="6" x2="30" y2="6" stroke="#c0563f" stroke-width="2.6" stroke-linecap="round"/><path d="M30,3 L36,6 L30,9 Z" fill="#c0563f"/></svg>
+        <span><b>Critical bottleneck</b> — binding constraint</span>
+      </div>
+      <div class="leg">
+        <svg viewBox="0 0 38 12"><line x1="2" y1="6" x2="30" y2="6" stroke="#c89a3a" stroke-width="2.1" stroke-linecap="round"/><path d="M30,3 L36,6 L30,9 Z" fill="#c89a3a"/></svg>
+        <span><b>Elevated constraint</b> — real, but softer</span>
+      </div>
+      <div class="leg">
+        <svg viewBox="0 0 38 12"><line x1="2" y1="6" x2="30" y2="6" stroke="#c89a3a" stroke-width="2.1" stroke-linecap="round" stroke-dasharray="5 4"/><path d="M30,3 L36,6 L30,9 Z" fill="#c89a3a"/></svg>
+        <span><b>Demand amplifier</b> — lengthens the queue</span>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div class="detail" id="detail">
+      <div class="d-hint">Click any arrow to see the bottleneck behind it — and whether it drives lead time, cost, or both.</div>
+    </div>
+  </div>
+
+  <!-- Prose -->
+  <div class="prose">
+    <p>
+      The spine runs top to bottom: <b>GOES electrical steel</b> and <b>copper</b> become a
+      <b>core &amp; windings</b>, which — together with <b>tap changers and bushings</b> — flow into
+      <b>OEM assembly</b>, then ship by <b>heavy-lift logistics</b> to become an
+      <b>energised transformer</b>. The red links are where the schedule is really set.
+    </p>
+    <p>
+      The <b>GOES → core</b> link is the single hardest constraint in the industry: roughly ten mills
+      worldwide can make grain-oriented steel at grade, it is processing- and know-how-bound rather
+      than ore-bound, and prices have run up 60–77% since 2020. The <b>components → assembly</b> link is
+      the other red one — on-load tap changers (Reinhausen) and HV bushings (Trench) are certified
+      per-application and served by a handful of suppliers, so one late part holds the whole build.
+    </p>
+    <p>
+      The dashed <b>demand-pull</b> arrow is not a material at all — it is the AI / data-center, grid-
+      replacement and renewable build-out pushing transformer demand from ~1,500 toward ~9,000 units a
+      year by 2030. It doesn't break a link; it stretches every queue behind it.
+    </p>
+    <p class="omit">
+      Deliberately not shown: aluminum, container freight, and iron ore. The supply-chain analysis
+      ranked them low-impact for <i>large</i> power transformers — aluminum is a distribution-class
+      winding metal, container freight doesn't move 300-tonne units, and GOES scarcity is about
+      processing capacity, not ore. Leaving them off the map is the point.
+    </p>
+  </div>
+
+  <!-- Follow-up pills -->
+  <div class="pills">
+    <button class="pill" data-q="break">What breaks this chain? →</button>
+    <button class="pill" data-q="watch">Where should I watch? →</button>
+  </div>
+
+</div>
+
+<script>
+  const DATA = {
+    a1: { lvl:"crit", tag:"Critical bottleneck", title:"GOES steel → Core & windings",
+          body:"Grain-oriented electrical steel is the binding constraint of the whole industry: ~10 capable mills worldwide, processing- and grain-orientation-bound (not ore-bound), prices up 60–77% since 2020. No quick substitute and long qualification cycles. Drives both cost and lead time." },
+    a2: { lvl:"elev", tag:"Elevated constraint", title:"Copper → Core & windings",
+          body:"Copper is the winding metal for large units (aluminum is distribution-only). Globally available, so rarely an availability bottleneck — but highly price-volatile, making it a major cost driver rather than a hard schedule constraint." },
+    a3: { lvl:"elev", tag:"Elevated constraint", title:"Insulation & oil → OEM assembly",
+          body:"Naphthenic transformer oil (Nynas, Ergon) is refining- and feedstock-constrained; pressboard (Weidmann) and Nomex aramid (DuPont) are concentrated suppliers with long approval cycles. Real exposure, but second-sourcing exists." },
+    a4: { lvl:"crit", tag:"Critical bottleneck", title:"Core & windings → OEM assembly",
+          body:"Core stacking and coil winding is specialised, labour-intensive work with limited skilled capacity — and it can't start until GOES arrives. A genuine throughput chokepoint inside the factory." },
+    a5: { lvl:"crit", tag:"Critical bottleneck", title:"Tap changers & bushings → OEM assembly",
+          body:"OLTCs (Reinhausen-dominated) and HV bushings (Trench, HSP, Hitachi) are the components most consistently flagged as build-schedule bottlenecks: certified per application, few qualified suppliers, and one delay holds the entire transformer." },
+    a6: { lvl:"amp",  tag:"Demand amplifier", title:"Demand pull ⇢ OEM assembly",
+          body:"Data-center/AI, aging-grid replacement and renewable interconnection push demand from ~1,500 to ~9,000 units/yr by 2030. Developers pre-buy factory slots, so the backlog itself becomes the constraint — lead times of 2–4 years for everyone behind them." },
+    a7: { lvl:"elev", tag:"Elevated constraint", title:"OEM assembly → Heavy-lift logistics",
+          body:"Finished units weigh 100–400 t. Moving them needs breakbulk vessels plus specialised Schnabel rail (≈3 in North America) and route permits that can take ~9 months — logistics alone adds months to delivery." },
+    a8: { lvl:"elev", tag:"Elevated constraint", title:"Heavy-lift logistics → Energised transformer",
+          body:"The last mile: site access, crane windows, and on-site assembly / commissioning / energisation. Less about scarcity, more about sequencing the final step before the unit is live." },
+  };
+  const SUMMARY = {
+    break: { lvl:"crit", tag:"Biggest risks", title:"What breaks this chain",
+             body:"The two red links: a GOES supply shock (mill outage, export control, or a single-source failure like US-only Cleveland-Cliffs) and a tap-changer / bushing shortage. Either one alone stalls finished-transformer output regardless of how much copper or oil is available." },
+    watch: { lvl:"elev", tag:"Where to watch", title:"Leading indicators to monitor",
+             body:"GOES mill announcements and pricing; Reinhausen / Trench order books and lead-time notices; naphthenic-oil refining capacity; heavy-lift vessel and Schnabel-car availability; and hyperscaler / utility capacity reservations, which front-run the backlog." },
+  };
+
+  const svg = document.getElementById('svg');
+  const detail = document.getElementById('detail');
+  const arrows = {};
+  document.querySelectorAll('.arrow[id]').forEach(p => arrows[p.id] = p);
+
+  function render(d) {
+    detail.className = 'detail active lvl-' + d.lvl;
+    detail.innerHTML =
+      '<div class="d-head"><span class="d-pill p-' + d.lvl + '">' + d.tag + '</span>' +
+      '<span class="d-title">' + d.title + '</span></div>' +
+      '<div class="d-body">' + d.body + '</div>';
+  }
+  function selectArrow(id) {
+    svg.classList.add('dimmed');
+    Object.values(arrows).forEach(a => a.classList.remove('sel'));
+    if (arrows[id]) arrows[id].classList.add('sel');
+    render(DATA[id]);
+  }
+
+  document.querySelectorAll('.hit').forEach(h => {
+    h.addEventListener('click', () => selectArrow(h.dataset.a));
+  });
+  document.querySelectorAll('.pill').forEach(b => {
+    b.addEventListener('click', () => {
+      svg.classList.remove('dimmed');
+      Object.values(arrows).forEach(a => a.classList.remove('sel'));
+      render(SUMMARY[b.dataset.q]);
+    });
+  });
+</script>
+</body>
+</html>

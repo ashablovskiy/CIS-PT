@@ -135,6 +135,14 @@ sec_fn = _make_agent_fn(
     lookback_hours=25,
 )
 
+ir_fn = _make_agent_fn(
+    fn_id="cis/ir-agent",
+    cron="20 */6 * * *",  # every 6 hours at :20 (stagger from other feeds)
+    agent_import="apps.api.ingest.sources.ir_agent",
+    agent_class="IrAgent",
+    lookback_hours=8,
+)
+
 # ── Assessment pipeline cron — runs 15 min after each ingestion sweep ────────
 
 @inngest_client.create_function(
@@ -218,6 +226,6 @@ async def optimizer_fn(ctx: inngest.Context, step: inngest.Step) -> dict:
 
 # All functions for FastAPI registration
 ALL_FUNCTIONS = [
-    prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn,
+    prices_fn, gdelt_fn, logistics_fn, press_fn, demand_fn, sec_fn, ir_fn,
     assessment_fn, scout_fn, optimizer_fn,
 ]

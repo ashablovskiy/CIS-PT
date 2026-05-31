@@ -16,6 +16,7 @@ const SOURCE_META: Record<string, { icon: string; label: string; color: string }
   press:     { icon: "📰", label: "Press",     color: "bg-slate-50 text-slate-600 border-slate-200" },
   demand:    { icon: "📈", label: "Demand",    color: "bg-teal-50 text-teal-700 border-teal-200" },
   sec:       { icon: "📄", label: "SEC",       color: "bg-gray-50 text-gray-600 border-gray-200" },
+  ir:        { icon: "🏭", label: "IR / OEM",  color: "bg-orange-50 text-orange-700 border-orange-200" },
 };
 
 // ── Impact type chip colors (controlled vocabulary from scorer) ───────────────
@@ -191,12 +192,17 @@ function SignalRow({ signal, onScoreSaved }: {
         </span>
       </td>
 
-      {/* Description + price move */}
+      {/* Description + reasoning + price move */}
       <td className="px-2 py-3">
         <div className="flex flex-col gap-1">
           <div className="text-sm text-slate-800 leading-snug line-clamp-2">
             {signal.description || <span className="text-slate-400 italic">No description</span>}
           </div>
+          {signal.reasoning && (
+            <div className="text-xs text-slate-400 italic leading-snug line-clamp-2">
+              {signal.reasoning}
+            </div>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {signal.price_move && <PriceMoveBadge move={signal.price_move} />}
             {signal.url && (
@@ -230,13 +236,20 @@ function SignalRow({ signal, onScoreSaved }: {
           : <span className="text-slate-300 text-xs">—</span>}
       </td>
 
-      {/* Age */}
-      <td className="px-2 py-3 w-[100px]">
-        <span className="text-xs text-slate-400 whitespace-nowrap">
-          {signal.ingested_at
-            ? formatDistanceToNow(new Date(signal.ingested_at), { addSuffix: true })
-            : "—"}
-        </span>
+      {/* When (occurred_at = event time; ingested_at = ingest time) */}
+      <td className="px-2 py-3 w-[110px]">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-slate-600 whitespace-nowrap">
+            {signal.occurred_at
+              ? new Date(signal.occurred_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+              : "—"}
+          </span>
+          <span className="text-[10px] text-slate-400 whitespace-nowrap">
+            {signal.ingested_at
+              ? "ingested " + formatDistanceToNow(new Date(signal.ingested_at), { addSuffix: true })
+              : ""}
+          </span>
+        </div>
       </td>
 
       {/* Manual assess */}
@@ -265,7 +278,7 @@ export default function SignalsPage() {
   // Local overrides (optimistic, layered on top of DB)
   const [overrides, setOverrides] = useState<Record<string, number>>({});
 
-  const url = `${API}/api/signals?hours=${hours}&limit=200`;
+  const url = `${API}/api/signals?hours=${hours}&limit=500`;
   const { data: rawSignals, isLoading } = useSWR(url, fetcher, { refreshInterval: 30_000 });
 
   // Merge in local optimistic overrides
@@ -372,7 +385,7 @@ export default function SignalsPage() {
               <th className="px-2 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Signal</th>
               <th className="px-2 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-[160px]">Impact on TP chain</th>
               <th className="px-2 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-[90px]">Score</th>
-              <th className="px-2 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-[100px]">Age</th>
+              <th className="px-2 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-[110px]">When</th>
               <th className="px-2 pr-5 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-[160px]">Assess</th>
             </tr>
           </thead>

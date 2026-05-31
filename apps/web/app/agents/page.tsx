@@ -14,6 +14,7 @@ const SOURCE_META: Record<string, { label: string; icon: string }> = {
   press:     { label: "Press Agent",     icon: "📰" },
   demand:    { label: "Demand Agent",    icon: "📈" },
   sec:       { label: "SEC Agent",       icon: "📄" },
+  ir:        { label: "IR / OEM News",   icon: "🏭" },
 };
 
 const INTERVAL_OPTIONS = [1, 2, 4, 6, 12, 24];

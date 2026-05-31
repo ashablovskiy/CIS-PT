@@ -59,3 +59,4 @@ eval/report.md
 
 # LangSmith local cache
 .langsmith/
+.gstack/

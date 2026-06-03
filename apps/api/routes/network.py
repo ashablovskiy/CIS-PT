@@ -126,3 +126,28 @@ async def post_snapshot(hours: int = Q(default=720, ge=1, le=2160)) -> dict:
     """Compute and persist a network snapshot immediately."""
     from apps.api.network.snapshot import take_snapshot
     return await take_snapshot(window_hours=hours)
+
+
+# ── Layer 2 — ANT Actor Map endpoints ────────────────────────────────────────
+
+@router.get("/ant/state")
+async def get_ant_state(hours: int = Q(default=720, ge=1, le=2160)) -> dict:
+    """Current Layer-2 ANT actor state: 8 systemic forces, each with
+    direct + propagated pressure accumulated from Layer-1 signals via rollup."""
+    from apps.api.network.ant_state import compute_ant_state
+    return await compute_ant_state(window_hours=hours)
+
+
+@router.get("/ant/actor/{actor_id}")
+async def get_ant_actor(actor_id: str, hours: int = Q(default=720, ge=1, le=2160)) -> dict:
+    """Detail for one Layer-2 actor: pressure, influence, and the specific
+    signals (with their L1 entity or impact_type match) driving it."""
+    from apps.api.network.ant_state import compute_ant_state
+    from apps.api.network.actor_map import actor_by_id
+    meta = actor_by_id(actor_id)
+    if meta is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown ANT actor: {actor_id}")
+    state = await compute_ant_state(window_hours=hours)
+    actor_state = next((a for a in state["actors"] if a["id"] == actor_id), {})
+    return {**meta, **actor_state}

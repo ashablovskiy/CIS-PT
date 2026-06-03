@@ -317,6 +317,7 @@ class NetworkSnapshot(Base):
     bottlenecks_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # emerging bottlenecks
     signal_window_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signal_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ant_state_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # Layer-2 ANT state
 
 
 # ── Agent telemetry ───────────────────────────────────────────────────────────

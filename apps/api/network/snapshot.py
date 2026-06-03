@@ -17,8 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 async def take_snapshot(window_hours: int = 720) -> dict:
-    """Compute current network state, persist a snapshot row, return summary."""
+    """Compute current L1 + L2 network state, persist a snapshot row, return summary."""
+    from apps.api.network.ant_state import compute_ant_state
+
     state = await compute_network_state(window_hours=window_hours, top_n=12)
+    ant_state = await compute_ant_state(window_hours=window_hours)
 
     # Count signals contributing in the window (distinct signals with a link).
     from datetime import UTC, datetime, timedelta
@@ -43,6 +46,7 @@ async def take_snapshot(window_hours: int = 720) -> dict:
             bottlenecks_json=state["bottlenecks"],
             signal_window_hours=window_hours,
             signal_count=signal_count,
+            ant_state_json=ant_state,
         )
         session.add(snap)
         await session.commit()

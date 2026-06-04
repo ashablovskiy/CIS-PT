@@ -160,6 +160,12 @@ function ReasoningStep({ step, index }: { step: any; index: number }) {
   );
 }
 
+// Static export requires this; assessment IDs are only known at runtime so we
+// return [] and rely on client-side navigation (direct URL access will 404 on GH Pages).
+export function generateStaticParams() {
+  return [];
+}
+
 export default function AssessmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: a, isLoading, error } = useSWR(`/api/assessments/${id}`, fetcher);

@@ -22,9 +22,19 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Build allowed-origins list: always include localhost for dev, plus any
+# additional domains from CORS_ORIGINS env var (comma-separated).
+_cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+if settings.web_base_url and settings.web_base_url not in _cors_origins:
+    _cors_origins.append(settings.web_base_url)
+for _origin in settings.cors_origins.split(","):
+    _origin = _origin.strip()
+    if _origin and _origin not in _cors_origins:
+        _cors_origins.append(_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.web_base_url, "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

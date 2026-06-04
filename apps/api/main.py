@@ -41,12 +41,24 @@ app.add_middleware(
 )
 
 # ── Inngest (serves webhook at /api/inngest) ──────────────────────────────────
-inngest.fast_api.serve(
-    app,
-    inngest_client,
-    ALL_FUNCTIONS,
-    serve_path="/api/inngest",
-)
+# Only register if a real signing key is present.  Without it the API starts
+# normally — scheduled agent crons are simply disabled.  This lets the service
+# run on Railway without an Inngest account.
+_inngest_key = settings.inngest_signing_key
+_inngest_ready = bool(_inngest_key and _inngest_key != "signkey-FILL_ME_IN")
+
+if _inngest_ready:
+    inngest.fast_api.serve(
+        app,
+        inngest_client,
+        ALL_FUNCTIONS,
+        serve_path="/api/inngest",
+    )
+else:
+    logger.info(
+        "INNGEST_SIGNING_KEY not configured — agent cron schedule disabled. "
+        "Set a real key to enable scheduled ingestion runs."
+    )
 
 
 @app.get("/health", tags=["meta"])

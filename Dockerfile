@@ -42,8 +42,8 @@ ENV PYTHONPATH="/app"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Railway injects $PORT; fall back to 8000 for other platforms.
-EXPOSE 8000
+# Railway injects $PORT at runtime; no fixed EXPOSE to avoid proxy port mismatch.
+EXPOSE 8080
 
 # Healthcheck uses the same dynamic port.
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \

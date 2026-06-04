@@ -1,9 +1,9 @@
 "use client";
 
 import useSWR from "swr";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -53,10 +53,6 @@ function ConfidenceRing({ value }: { value: number | null }) {
   );
 }
 
-/**
- * Magnitudes can arrive as either a scalar number or a
- * {low, mid, high} confidence interval (from the XGBoost price model).
- */
 function magnitudeText(mag: unknown): { headline: string; range: string | null } {
   if (mag == null) return { headline: "—", range: null };
   if (typeof mag === "number") return { headline: `${mag.toFixed(1)}%`, range: null };
@@ -98,7 +94,6 @@ function ImpactRow({ dimension, data }: { dimension: string; data: any }) {
             <span className="text-xs text-slate-400">{Math.round(confidence * 100)}%</span>
           </div>
         )}
-        {/* ML enrichment badge */}
         {ml_used && ml_magnitude_pct != null && (
           <span className="ml-auto text-[11px] bg-violet-50 border border-violet-200 text-violet-700
             px-2 py-0.5 rounded-full font-medium">
@@ -128,7 +123,6 @@ function ReasoningStep({ step, index }: { step: any; index: number }) {
 
   return (
     <div className="flex gap-4 group">
-      {/* Step number + connector */}
       <div className="flex flex-col items-center">
         <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center
           text-white text-xs font-bold shrink-0 shadow-sm">
@@ -136,7 +130,6 @@ function ReasoningStep({ step, index }: { step: any; index: number }) {
         </div>
         <div className="w-px flex-1 bg-slate-200 mt-1 mb-1 group-last:hidden" />
       </div>
-      {/* Content */}
       <div className="pb-5 flex-1 min-w-0">
         <p className="text-sm font-semibold text-slate-800 leading-snug">{step.claim}</p>
         {step.inference && (
@@ -160,15 +153,13 @@ function ReasoningStep({ step, index }: { step: any; index: number }) {
   );
 }
 
-// Static export requires this; assessment IDs are only known at runtime so we
-// return [] and rely on client-side navigation (direct URL access will 404 on GH Pages).
-export function generateStaticParams() {
-  return [];
-}
-
-export default function AssessmentDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const { data: a, isLoading, error } = useSWR(`/api/assessments/${id}`, fetcher);
+function AssessmentDetail() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
+  const { data: a, isLoading, error } = useSWR(
+    id ? `/api/assessments/${id}` : null,
+    fetcher,
+  );
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackAction, setFeedbackAction] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -210,7 +201,6 @@ export default function AssessmentDetailPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-5">
 
-        {/* Header */}
         <div>
           <Link href="/assessments" className="text-sm text-slate-400 hover:text-slate-600 mb-4 inline-block">
             ← Assessments
@@ -239,7 +229,6 @@ export default function AssessmentDetailPage() {
           </div>
         </div>
 
-        {/* Signal source banner */}
         {a.signal && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-start gap-3">
             <span className="text-blue-400 mt-0.5">📡</span>
@@ -261,12 +250,10 @@ export default function AssessmentDetailPage() {
           </div>
         )}
 
-        {/* Summary */}
         <Card title="Executive Summary">
           <p className="text-sm text-slate-700 leading-relaxed">{a.summary}</p>
         </Card>
 
-        {/* Entities */}
         {hasEntities && (
           <Card title="Affected Entities">
             <div className="space-y-3">
@@ -298,7 +285,6 @@ export default function AssessmentDetailPage() {
           </Card>
         )}
 
-        {/* Impact by dimension */}
         {Object.keys(impact).length > 0 && (
           <Card title="Impact by Dimension">
             {Object.entries(impact).map(([dim, data]) => (
@@ -307,16 +293,13 @@ export default function AssessmentDetailPage() {
           </Card>
         )}
 
-        {/* Contract clauses */}
         {clauses.length > 0 && (
           <Card title="Contract Clause Analysis">
             <div className="space-y-2.5">
               {clauses.map((c, i) => (
                 <div key={i}
                   className={`rounded-xl border px-4 py-3 ${
-                    c.triggered
-                      ? "bg-red-50 border-red-200"
-                      : "bg-slate-50 border-slate-200"
+                    c.triggered ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -345,7 +328,6 @@ export default function AssessmentDetailPage() {
           </Card>
         )}
 
-        {/* Reasoning chain */}
         {chain.length > 0 && (
           <Card title={`Reasoning Chain (${chain.length} steps)`}>
             <div className="pt-1">
@@ -356,7 +338,6 @@ export default function AssessmentDetailPage() {
           </Card>
         )}
 
-        {/* Feedback */}
         <Card title="Analyst Feedback">
           {feedbackSent ? (
             <div className="flex items-center gap-2 text-sm text-emerald-700 font-medium">
@@ -395,5 +376,13 @@ export default function AssessmentDetailPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-slate-400 text-sm animate-pulse">Loading…</div>}>
+      <AssessmentDetail />
+    </Suspense>
   );
 }

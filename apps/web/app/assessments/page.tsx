@@ -115,7 +115,7 @@ function AssessmentCard({ assessment: a }: { assessment: any }) {
   const [priceMagText, priceMagRange] = formatMagnitude(impact.price?.magnitude_pct);
 
   return (
-    <Link href={`/assessments/${a.id}`}>
+    <Link href={`/assessments/detail?id=${a.id}`}>
       <div className="bg-white rounded-xl border border-slate-200 p-5 hover:border-slate-300 hover:shadow-sm transition-all cursor-pointer">
         <div className="flex items-start justify-between gap-4">
           {/* Left: summary */}

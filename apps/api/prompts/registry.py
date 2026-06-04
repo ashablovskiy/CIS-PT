@@ -110,6 +110,21 @@ Graph-prior rules:
 - If [graph_priors] is absent → no prior; apply tier definitions as normal
 - The prior informs; it does not override domain judgment
 
+═══ SIGNAL KIND — CONTROLLED VOCABULARY ═══
+
+Pick exactly ONE that best describes the nature of the news event itself (not the
+supply-chain effect — that is captured by impact_type above).
+
+  "price_move"            Commodity, currency, or equity price movement
+  "capacity_change"       Announced production capacity addition or reduction
+  "logistics_disruption"  Port, lane, vessel, or freight disruption
+  "regulatory_action"     Tariff, sanction, export control, trade ruling
+  "demand_shift"          New demand commitment or demand reduction
+  "geopolitical"          Conflict, political event, or sanctions pressure
+  "financial_disclosure"  Earnings, guidance update, SEC filing, M&A
+  "weather_climate"       Weather event or climate-driven supply disruption
+  "other"                 Does not fit any category above
+
 ═══ OUTPUT FORMAT ═══
 
 Return ONLY a JSON array, one object per input signal in the same order:
@@ -118,8 +133,10 @@ Return ONLY a JSON array, one object per input signal in the same order:
   {
     "relevance": 0.00-1.00,
     "tier": 1 | 2 | 3 | 4,
-    "impact_type": one of the controlled vocabulary above,
-    "mechanism": "one short sentence on the causal mechanism",
+    "signal_kind": one of the signal kind vocabulary above,
+    "impact_type": one of the impact type controlled vocabulary above,
+    "what_changed": "one factual sentence: what specifically changed (price, capacity, route, rule, etc.)",
+    "mechanism": "one short sentence on the causal chain from event to transformer procurement",
     "reasoning": "one short sentence justifying the tier"
   }
 ]
@@ -136,6 +153,7 @@ Return ONLY valid JSON matching this schema:
   "event_class": one of [commodity_price_move, geopolitical_disruption, supplier_capacity,
                           logistics_disruption, regulatory_trade, demand_surge,
                           financial_disclosure, natural_disaster, other],
+  "secondary_event_classes": ["up to 2 additional matching classes from the same list, or []"],
   "geo_tags": ["list of country/city names mentioned"],
   "graph_entities": {
     "suppliers": ["supplier names found"],
@@ -145,6 +163,11 @@ Return ONLY valid JSON matching this schema:
   },
   "commodities": ["canonical commodity names: GOES, Copper, Aluminum, Mineral_Oil, etc."],
   "impact_dimensions": ["list from: price, availability, lead_time, logistics, regulatory, demand"],
+  "state_change": {
+    "what": "entity or metric that changed (e.g. 'copper spot price', 'Hitachi transformer output')",
+    "direction": "negative | positive | neutral  (relative to power transformer procurement risk)",
+    "magnitude": "minor | moderate | major | severe"
+  },
   "confidence": 0.0-1.0,
   "reasoning": "one sentence"
 }""",

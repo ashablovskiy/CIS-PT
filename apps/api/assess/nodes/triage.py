@@ -84,10 +84,12 @@ async def triage_node(state: AssessmentState) -> AssessmentState:
     # Store classification in state via graph_context metadata
     state.graph_context = [{"_triage": {
         "event_class": result.event_class,
+        "secondary_event_classes": result.secondary_event_classes,
         "geo_tags": result.geo_tags,
         "graph_entities": enriched,
         "commodities": result.commodities,
         "impact_dimensions": [str(d) for d in result.impact_dimensions],
+        "state_change": result.state_change,
         "confidence": result.confidence,
         "reasoning": result.reasoning,
     }}]

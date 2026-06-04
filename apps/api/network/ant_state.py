@@ -100,6 +100,24 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
     Returns:
         pressure: {ant_actor_id: total_pressure}
         contributors: {ant_actor_id: [{signal_id, title, source, pressure, match}]}
+
+    Cross-source event deduplication
+    ---------------------------------
+    Multiple news outlets reporting the same real-world event are clustered at
+    ingest time via cosine-similarity on signal embeddings (see
+    network/event_cluster.py).  Each signal carries an event_id that points to
+    the canonical (first-seen) signal for that real-world event.
+
+    Instead of summing pressure from ALL signals, we:
+      1. Accumulate the MAX decayed pressure contribution per (L2 actor, event_id)
+      2. Sum those per-event maxima across all distinct events
+
+    This means 5 news sources covering the same factory shutdown contribute the
+    same pressure as 1 source — the loudest signal wins, the rest are silent.
+
+    Legacy signals (pre-migration, event_id IS NULL) fall back to using their
+    own signal_id as the event key, so they are still counted as individual
+    events (safe — they just don't benefit from dedup).
     """
     now = datetime.now(UTC)
     cutoff = now - timedelta(hours=window_hours)
@@ -113,6 +131,7 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
                 SignalActorLink.actor_name,
                 SignalActorLink.pressure,
                 Signal.id,
+                Signal.event_id,
                 Signal.source,
                 Signal.raw_payload,
                 Signal.occurred_at,
@@ -121,21 +140,36 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
             .where(Signal.occurred_at >= cutoff)
         )).all()
 
-        for actor_name, p, sig_id, source, payload, occurred_at in rows:
+        # event_max1[l2_id][event_key] = (max_contrib, best_contributor_dict)
+        event_max1: dict[str, dict[str, tuple[float, dict]]] = {
+            a["id"]: {} for a in ACTORS
+        }
+        for actor_name, p, sig_id, event_id, source, payload, occurred_at in rows:
             l2_id = entity_to_l2(actor_name or "")
             if l2_id is None:
                 continue
             decay = _decay(occurred_at, now)
             contrib = (p or 0.0) * decay
-            pressure[l2_id] = pressure.get(l2_id, 0.0) + contrib
+            # Use event_id as dedup key; fall back to sig_id for legacy rows.
+            event_key = str(event_id) if event_id is not None else str(sig_id)
             title = (payload or {}).get("title") or (payload or {}).get("label") or ""
-            contributors[l2_id].append({
+            contributor = {
                 "signal_id": str(sig_id),
                 "source": source,
                 "title": title[:100],
                 "pressure": round(contrib, 4),
                 "match": f"entity:{actor_name}",
-            })
+            }
+            existing = event_max1[l2_id].get(event_key)
+            if existing is None or contrib > existing[0]:
+                event_max1[l2_id][event_key] = (contrib, contributor)
+
+        # Materialise Channel 1 into pressure + contributors
+        for a in ACTORS:
+            aid = a["id"]
+            for contrib, contributor in event_max1[aid].values():
+                pressure[aid] += contrib
+                contributors[aid].append(contributor)
 
         # ── Channel 2: impact_type tag rollup ──────────────────────────────
         it_rows = (await s.execute(
@@ -144,6 +178,7 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
                 SignalRelevance.llm_score,
                 SignalRelevance.impact_tier,
                 Signal.id,
+                Signal.event_id,
                 Signal.source,
                 Signal.raw_payload,
                 Signal.occurred_at,
@@ -156,7 +191,11 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
             )
         )).all()
 
-        for impact_type, llm_score, tier, sig_id, source, payload, occurred_at in it_rows:
+        # event_max2[l2_id][event_key] = (max_contrib, best_contributor_dict)
+        event_max2: dict[str, dict[str, tuple[float, dict]]] = {
+            a["id"]: {} for a in ACTORS
+        }
+        for impact_type, llm_score, tier, sig_id, event_id, source, payload, occurred_at in it_rows:
             l2_id = impact_type_to_l2(impact_type)
             if l2_id is None:
                 continue
@@ -167,15 +206,25 @@ async def _l2_direct_pressure(window_hours: int) -> tuple[dict[str, float], dict
             contrib = score_p * decay
             if contrib < 0.001:
                 continue
-            pressure[l2_id] = pressure.get(l2_id, 0.0) + contrib
+            event_key = str(event_id) if event_id is not None else str(sig_id)
             title = (payload or {}).get("title") or ""
-            contributors[l2_id].append({
+            contributor = {
                 "signal_id": str(sig_id),
                 "source": source,
                 "title": title[:100],
                 "pressure": round(contrib, 4),
                 "match": f"impact_type:{impact_type}",
-            })
+            }
+            existing = event_max2[l2_id].get(event_key)
+            if existing is None or contrib > existing[0]:
+                event_max2[l2_id][event_key] = (contrib, contributor)
+
+        # Materialise Channel 2
+        for a in ACTORS:
+            aid = a["id"]
+            for contrib, contributor in event_max2[aid].values():
+                pressure[aid] += contrib
+                contributors[aid].append(contributor)
 
     # Deduplicate contributors by signal_id (same signal can arrive via both channels)
     for actor_id in contributors:

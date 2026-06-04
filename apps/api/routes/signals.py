@@ -10,7 +10,7 @@ from fastapi import Query as Q
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from apps.api.db.models import Signal, SignalRelevance
+from apps.api.db.models import ClassifiedSignal, Signal, SignalRelevance
 from apps.api.db.session import async_session_factory
 
 router = APIRouter()
@@ -83,8 +83,9 @@ async def list_signals(
 
     async with async_session_factory() as session:
         stmt = (
-            select(Signal, SignalRelevance)
+            select(Signal, SignalRelevance, ClassifiedSignal)
             .outerjoin(SignalRelevance, Signal.id == SignalRelevance.signal_id)
+            .outerjoin(ClassifiedSignal, Signal.id == ClassifiedSignal.signal_id)
             .where(Signal.ingested_at >= cutoff)
             .order_by(Signal.ingested_at.desc())
             .limit(limit)
@@ -98,29 +99,40 @@ async def list_signals(
 
         rows = await session.execute(stmt)
         results = []
-        for sig, rel in rows:
+        for sig, rel, cs in rows:
             payload = sig.raw_payload or {}
             title   = payload.get("title") or payload.get("headline") or payload.get("ticker", "")
             summary = (payload.get("summary") or payload.get("text") or "")[:200]
 
             results.append({
+                # ── I. General ───────────────────────────────────────────────
                 "id":            str(sig.id),
                 "source":        sig.source,
                 "url":           sig.url,
                 "ingested_at":   sig.ingested_at.isoformat() if sig.ingested_at else None,
                 "occurred_at":   sig.occurred_at.isoformat() if sig.occurred_at else None,
-                # Enriched
                 "description":   _signal_description(sig.source, payload, title, summary),
                 "price_move":    _price_movement(payload) if sig.source == "prices" else None,
-                # Tiering / impact type now come from the DB (scorer v2)
-                "impact_type":   rel.impact_type if rel else None,
-                "impact_tier":   rel.impact_tier if rel else None,
-                # Scores: llm_score is the system score; analyst_score is the override (or null)
-                "llm_score":     rel.llm_score if rel else None,
-                "analyst_score": rel.analyst_score if rel else None,
+                # ── II. Relevance Scorer output ──────────────────────────────
+                "llm_score":       rel.llm_score if rel else None,
+                "impact_tier":     rel.impact_tier if rel else None,
+                "signal_kind":     rel.signal_kind if rel else None,
+                "impact_type":     rel.impact_type if rel else None,
+                "what_changed":    rel.what_changed if rel else None,
+                "mechanism":       rel.mechanism if rel else None,
+                "scorer_reasoning": (rel.reasoning or "")[:300] if rel else None,
+                # Analyst override
+                "analyst_score":   rel.analyst_score if rel else None,
                 "effective_score": _effective_score(rel),
-                "decision":      rel.decision if rel else None,
-                "reasoning":     (rel.reasoning or "")[:200] if rel else None,
+                "decision":        rel.decision if rel else None,
+                # ── III. Triage Classifier output ────────────────────────────
+                "event_class":              cs.event_class if cs else None,
+                "secondary_event_classes":  cs.secondary_event_classes if cs else None,
+                "state_change":             cs.state_change if cs else None,
+                "graph_entities":           cs.graph_entities if cs else None,
+                "geo_tags":                 cs.geo_tags if cs else None,
+                "confidence":               cs.confidence if cs else None,
+                "triage_reasoning":         (cs.triage_reasoning or "")[:300] if cs else None,
             })
         return results
 

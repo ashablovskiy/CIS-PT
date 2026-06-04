@@ -55,11 +55,14 @@ async def finalizer_node(state: AssessmentState) -> AssessmentState:
             cs_values: dict[str, Any] = {
                 "signal_id": state.signal_id,
                 "event_class": triage.get("event_class", EventClass.OTHER),
+                "secondary_event_classes": triage.get("secondary_event_classes", []),
                 "geo_tags": triage.get("geo_tags", []),
                 "graph_entities": triage.get("graph_entities", {}),
                 "commodities": triage.get("commodities", []),
                 "impact_dimensions": triage.get("impact_dimensions", []),
+                "state_change": triage.get("state_change"),
                 "confidence": triage.get("confidence", 0.0),
+                "triage_reasoning": triage.get("reasoning"),
                 "classifier_version": state.agent_version,
             }
             if embedding is not None:

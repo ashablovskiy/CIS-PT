@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_base_url: str = "http://localhost:8000"
     web_base_url: str = "http://localhost:3000"
+    # Comma-separated list of allowed CORS origins.
+    # In production set to the actual frontend domain(s), e.g.:
+    #   CORS_ORIGINS=https://cis-web.vercel.app,https://yourname.github.io
+    cors_origins: str = ""
 
     # ── SEC EDGAR ─────────────────────────────────────────────────────────
     sec_user_agent: str = "cis-research/0.1 a.shablovskiy@gmail.com"

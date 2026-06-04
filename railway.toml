@@ -1,0 +1,37 @@
+# Railway deployment — CIS API
+# Hobby plan, Docker builder (uses existing Dockerfile at repo root).
+#
+# Setup steps:
+#   1. railway login && railway init
+#   2. railway up          ← deploys the API
+#   3. In Railway dashboard → service → Variables → paste all vars from .env
+#      (see REQUIRED section below)
+#   4. Note the Railway-assigned domain (e.g. cis-api-production.up.railway.app)
+#   5. Set CORS_ORIGINS in Railway vars to your frontend domain
+#   6. Set NEXT_PUBLIC_API_URL in the web service (or apps/web/.env.local) to
+#      https://<railway-domain>
+
+[build]
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath      = "/health"
+healthcheckTimeout   = 300          # seconds — generous for cold-start DB connect
+restartPolicyType    = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# ── Required environment variables (set in Railway dashboard → Variables) ────
+#
+# DATABASE_URL      postgresql+asyncpg://neondb_owner:<pwd>@<pooler-host>/neondb?sslmode=require
+# DATABASE_SYNC_URL postgresql+psycopg2://neondb_owner:<pwd>@<pooler-host>/neondb?sslmode=require
+# ANTHROPIC_API_KEY sk-ant-...
+# VOYAGE_API_KEY    pa-...
+# NEO4J_URI         neo4j+s://...
+# NEO4J_USERNAME    neo4j
+# NEO4J_PASSWORD    ...
+# ENVIRONMENT       production
+# LOG_LEVEL         INFO
+#
+# ── Optional (set after you know the frontend URL) ───────────────────────────
+# CORS_ORIGINS      https://your-frontend.vercel.app,https://yourname.github.io
+# WEB_BASE_URL      https://your-frontend.vercel.app

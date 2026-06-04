@@ -63,7 +63,17 @@ else:
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
-    return {"status": "ok", "environment": settings.environment}
+    from sqlalchemy import text
+    from apps.api.db.session import engine
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db = "ok"
+    except Exception as exc:
+        db = f"error: {exc}"
+    return {"status": "ok" if db == "ok" else "degraded",
+            "db": db,
+            "environment": settings.environment}
 
 
 # ── Route registration ────────────────────────────────────────────────────────

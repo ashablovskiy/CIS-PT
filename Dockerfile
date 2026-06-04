@@ -46,7 +46,7 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Healthcheck uses the same dynamic port.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
   CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Shell form so ${PORT:-8000} is evaluated at runtime.

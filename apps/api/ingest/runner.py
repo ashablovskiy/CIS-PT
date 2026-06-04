@@ -82,6 +82,9 @@ def _make_asyncpg_engine(url: str):
     new_query = urlencode({k: v[0] for k, v in params.items()})
     clean_url = urlunparse(parsed._replace(query=new_query))
     connect_args = {"ssl": True} if ssl_mode in ("require", "verify-ca", "verify-full") else {}
+    # timeout=15: asyncpg connect_timeout — Neon cold-start is typically 5-10 s;
+    # 15 s gives headroom without hanging workers for 60 s (asyncpg default).
+    connect_args["timeout"] = 15
     return create_async_engine(
         clean_url,
         poolclass=NullPool,   # no idle connections — safe for Neon serverless

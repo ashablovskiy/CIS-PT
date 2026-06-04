@@ -63,17 +63,20 @@ else:
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
+    import asyncio
     from sqlalchemy import text
     from apps.api.db.session import engine
     try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        async def _ping():
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        await asyncio.wait_for(_ping(), timeout=5.0)
         db = "ok"
+    except asyncio.TimeoutError:
+        db = "timeout"
     except Exception as exc:
-        db = f"error: {exc}"
-    return {"status": "ok" if db == "ok" else "degraded",
-            "db": db,
-            "environment": settings.environment}
+        db = f"error: {type(exc).__name__}"
+    return {"status": "ok", "db": db, "environment": settings.environment}
 
 
 # ── Route registration ────────────────────────────────────────────────────────

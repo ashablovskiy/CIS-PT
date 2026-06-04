@@ -49,6 +49,18 @@ class Signal(Base):
     )
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # ── Event clustering (added migration c3d4e5f6a1b2) ─────────────────────
+    # Voyage AI 1024-dim embedding computed at ingest time for cosine-similarity
+    # deduplication across news sources covering the same real-world event.
+    embedding: Mapped[Any | None] = mapped_column(Vector(1024), nullable=True)
+    # Self-referencing FK: points to the canonical (first-seen) signal for this
+    # event cluster.  NULL = legacy/unprocessed.  event_id == id = canonical.
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("signals.id", name="fk_signal_event_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     relevance: Mapped[SignalRelevance | None] = relationship(back_populates="signal", uselist=False)
     classified: Mapped[ClassifiedSignal | None] = relationship(
@@ -76,6 +88,10 @@ class SignalRelevance(Base):
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # ── Scorer v2 enrichment (migration d4e5f6a1b2c3) ────────────────────────
+    mechanism: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signal_kind: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    what_changed: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     signal: Mapped[Signal] = relationship(back_populates="relevance")
 
@@ -98,6 +114,10 @@ class ClassifiedSignal(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # ── Triage v2 enrichment (migration d4e5f6a1b2c3) ────────────────────────
+    triage_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    secondary_event_classes: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    state_change: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     signal: Mapped[Signal] = relationship(back_populates="classified")
 
@@ -317,6 +337,7 @@ class NetworkSnapshot(Base):
     bottlenecks_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # emerging bottlenecks
     signal_window_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signal_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ant_state_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # Layer-2 ANT state
 
 
 # ── Agent telemetry ───────────────────────────────────────────────────────────

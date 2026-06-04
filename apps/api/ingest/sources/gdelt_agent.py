@@ -1,4 +1,4 @@
-"""GDELT ingestion agent — dual-path based on window size.
+"""GDELT ingestion agent — three-path based on window size.
 
 BigQuery path (windows ≤ 6 h):
   Queries gdelt-bq.gdeltv2.gkg_partitioned. Cost per hourly run ≈ 0.47 GB,
@@ -7,23 +7,34 @@ BigQuery path (windows ≤ 6 h):
 DOC API path (windows > 6 h, e.g. backfill):
   Queries the free GDELT 2.0 DOC API (api.gdeltproject.org/api/v2/doc/doc).
   No auth, no bytes billed. Up to 250 articles per request.
-  Wide windows are chunked into 7-day slices (4 requests = ≤ 1,000 articles
-  for a 30-day backtest). English-only via sourcelang filter.
+  Wide windows are chunked into 7-day slices (5 requests for a 30-day window).
+  English-only post-filter on the `language` field.
 
-Why the split:
-  A 30-day BQ query scans ≈ 16.9 GB — 3× our 5 GB limit. The InternalServerError
-  the agent was logging was BigQuery wrapping bytesBilledLimitExceeded. The DOC API
-  is more appropriate for wide historical queries because it's pre-filtered for
-  recency and relevance server-side.
+GKG CSV fallback (per-slice, triggered when DOC API slice yields 0 articles):
+  Downloads raw GDELT v2 GKG 15-minute CSV files from data.gdeltproject.org.
+  No rate limit (plain HTTP). Each file ≈ 5 MB compressed; sampled at 4 files/day
+  (00, 06, 12, 18 UTC) → 28 files per 7-day slice ≈ 140 MB/slice download.
+  Filtered locally by V2Themes + V2Organizations keywords.
 
-Cadence: every 1 hour (cron uses BQ; backtest_30d uses DOC API automatically).
+Why three paths:
+  A 30-day BQ query scans ≈ 16.9 GB — 3× our 5 GB limit.
+  The DOC API is rate-limited (1 req/5s); exhausted retries leave empty slices.
+  The GKG CSV path provides a reliable floor — no auth, no rate limits, complete
+  GDELT coverage — at the cost of more bandwidth.
+
+Cadence: every 1 hour (cron uses BQ; backtest_30d uses DOC API automatically,
+         with GKG CSV kicking in for any slice the DOC API can't fill).
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 import os
+import re
+import zipfile
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote_plus
@@ -68,22 +79,43 @@ _DOC_SLICE_DAYS = 7       # chunk size for wide windows
 _DOC_MAX_RECORDS = 250    # DOC API hard cap
 _DOC_DATE_FMT = "%Y%m%d%H%M%S"
 
-# GDELT DOC API query — kept short to avoid URL-length limits (GDELT silently
-# returns empty results on very long queries). English filtering is done
-# post-fetch on the `language` field rather than with sourcelang:eng in the
-# URL (sourcelang works but compounds the URL length problem).
-# The query hits the key phrases — keyword_rules() catches the rest
-# at the rule-filter stage.
+# GDELT DOC API query — GDELT requires OR'd terms to be wrapped in outer
+# parentheses; without them the API returns a plain-text error:
+#   "Queries containing OR'd terms must be surrounded by ()."
+# Query kept short to avoid URL-length limits (GDELT silently returns empty
+# results on very long queries). English filtering done post-fetch on the
+# `language` field. keyword_rules() catches additional terms at rule-filter.
 _DOC_QUERY = (
-    '"power transformer" OR "electrical steel" OR "grain oriented steel" '
+    '("power transformer" OR "electrical steel" OR "grain oriented steel" '
     'OR "tap changer" OR "transformer backlog" OR "transformer capacity" '
     'OR "Siemens Energy" OR "Hitachi Energy" OR "GE Vernova" '
-    'OR "Hyundai Electric" OR "POSCO" OR "Nippon Steel"'
+    'OR "Hyundai Electric" OR "POSCO" OR "Nippon Steel")'
 )
 
 # Languages to keep from DOC API responses (post-filter).
 # Empty string = GDELT couldn't detect language → keep it (likely English domain).
 _KEEP_LANGUAGES = {"English", ""}
+
+# ── GKG CSV fallback constants ────────────────────────────────────────────────
+
+_GKG_BASE_URL = "http://data.gdeltproject.org/gdeltv2"
+# UTC hours sampled per day when falling back to raw GKG files.
+_GKG_SAMPLE_HOURS = (0, 6, 12, 18)
+# Max parallel GKG file downloads (each ~5 MB).
+_GKG_DL_CONCURRENCY = 2
+
+# Topic keywords searched in V2Organizations + DocumentIdentifier (lowercase).
+_GKG_TOPIC_KEYWORDS = [
+    "transformer", "electrical steel", "grain oriented", "tap changer",
+    "oltc", "substation", "power grid", "high voltage",
+]
+
+# Pre-compiled word-boundary patterns — avoids substring false positives
+# (e.g. "weg" matching "owego" or "sowegalive").
+_GKG_ORG_KW_LOWER = [k.lower() for k in SUPPLIER_KEYWORDS]
+_GKG_ALL_KW_LOWER = _GKG_ORG_KW_LOWER + _GKG_TOPIC_KEYWORDS
+_GKG_ORG_PATTERNS = [re.compile(r"\b" + re.escape(k) + r"\b") for k in _GKG_ORG_KW_LOWER]
+_GKG_ALL_PATTERNS = [re.compile(r"\b" + re.escape(k) + r"\b") for k in _GKG_ALL_KW_LOWER]
 
 
 # ── BQ helpers ────────────────────────────────────────────────────────────────
@@ -218,6 +250,115 @@ class GdeltAgent(BaseIngestionAgent):
             ))
         return items
 
+    # ── GKG CSV fallback helpers ──────────────────────────────────────────────
+
+    def _matches_gkg_row(self, themes_col: str, orgs_col: str, url: str) -> bool:
+        themes = {t.split(",")[0].upper() for t in themes_col.split(";") if t}
+        text = (orgs_col + " " + url).lower()
+        if themes & set(GDELT_THEMES):
+            if any(p.search(text) for p in _GKG_ALL_PATTERNS):
+                return True
+        return any(p.search(text) for p in _GKG_ORG_PATTERNS)
+
+    def _parse_gkg_zip(self, data: bytes, seen_urls: set[str]) -> list[RawItem]:
+        items: list[RawItem] = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                fname = next((n for n in zf.namelist() if n.endswith(".csv")), None)
+                if not fname:
+                    return items
+                with zf.open(fname) as f:
+                    reader = csv.reader(
+                        io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                        delimiter="\t",
+                    )
+                    for row in reader:
+                        if len(row) < 19:
+                            continue
+                        gkg_id, date_str = row[0], row[1]
+                        source_name, url = row[3], row[4]
+                        themes, locs = row[8], row[10]
+                        orgs, tone_raw = row[14], row[15]
+                        if not url or url in seen_urls:
+                            continue
+                        if not self._matches_gkg_row(themes, orgs, url):
+                            continue
+                        seen_urls.add(url)
+                        try:
+                            occurred_at = datetime.strptime(
+                                date_str[:14], "%Y%m%d%H%M%S"
+                            ).replace(tzinfo=UTC)
+                        except Exception:
+                            occurred_at = datetime.now(UTC)
+                        tone_parts = tone_raw.split(",")
+                        overall_tone = float(tone_parts[0]) if tone_parts and tone_parts[0] else 0.0
+                        items.append(RawItem(
+                            source="gdelt",
+                            source_id=f"gdelt:gkg:{abs(hash(url)) & 0xFFFFFFFFFFFF:012x}",
+                            url=url,
+                            occurred_at=occurred_at,
+                            raw_payload={
+                                "gkg_record_id": gkg_id,
+                                "source_name": source_name,
+                                "url": url,
+                                "themes": themes[:500],
+                                "organizations": orgs[:500],
+                                "locations": locs[:500],
+                                "overall_tone": round(overall_tone, 2),
+                                "pull_method": "gkg_csv",
+                            },
+                        ))
+        except Exception as exc:
+            logger.debug("[gdelt/gkg] parse error: %s", exc)
+        return items
+
+    async def _pull_gkg_slice(
+        self, client: httpx.AsyncClient, start: datetime, end: datetime,
+        seen_urls: set[str],
+    ) -> list[RawItem]:
+        """Download sampled GKG CSV files for a date window and filter locally."""
+        timestamps: list[str] = []
+        day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        while day <= end:
+            for hour in _GKG_SAMPLE_HOURS:
+                ts_dt = day.replace(hour=hour)
+                if start <= ts_dt <= end:
+                    snapped = ts_dt.replace(minute=(ts_dt.minute // 15) * 15)
+                    timestamps.append(snapped.strftime("%Y%m%d%H%M%S"))
+            day += timedelta(days=1)
+
+        logger.info("[gdelt/gkg] slice %s–%s: fetching %d sampled files",
+                    start.date(), end.date(), len(timestamps))
+
+        items: list[RawItem] = []
+        for i in range(0, len(timestamps), _GKG_DL_CONCURRENCY):
+            batch = timestamps[i : i + _GKG_DL_CONCURRENCY]
+
+            async def _dl(ts: str) -> tuple[str, bytes | None]:
+                url = f"{_GKG_BASE_URL}/{ts}.gkg.csv.zip"
+                try:
+                    r = await client.get(url, timeout=60)
+                    if r.status_code == 404:
+                        return ts, None
+                    r.raise_for_status()
+                    return ts, r.content
+                except Exception as exc:
+                    logger.debug("[gdelt/gkg] download %s: %s", ts, exc)
+                    return ts, None
+
+            results = await asyncio.gather(*[_dl(ts) for ts in batch])
+            for ts, data in results:
+                if data is None:
+                    continue
+                new_items = self._parse_gkg_zip(data, seen_urls)
+                if new_items:
+                    logger.info("[gdelt/gkg] %s → %d matching rows", ts, len(new_items))
+                    items.extend(new_items)
+            if i + _GKG_DL_CONCURRENCY < len(timestamps):
+                await asyncio.sleep(1.0)
+
+        return items
+
     # ── DOC API path ─────────────────────────────────────────────────────────
 
     @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=12, max=60))
@@ -267,15 +408,16 @@ class GdeltAgent(BaseIngestionAgent):
             return datetime.now(UTC)
 
     async def _pull_via_docapi(self, start: datetime, end: datetime) -> list[RawItem]:
-        """Pull via GDELT DOC API, chunking wide windows into 7-day slices."""
+        """Pull via GDELT DOC API, 7-day slices. Falls back to GKG CSV for empty slices."""
         items: list[RawItem] = []
         seen_urls: set[str] = set()
         total_slices = 0
+        gkg_slices = 0
 
         headers = {"User-Agent": settings.sec_user_agent}
-        async with httpx.AsyncClient(headers=headers) as client:
-            # Brief initial pause — avoids hitting the rate limit if the agent
-            # was already making requests in the same process (e.g. back-to-back runs).
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
+            # Brief initial pause — avoids rate-limit if the agent was already
+            # making requests in the same process (e.g. back-to-back runs).
             await asyncio.sleep(6.0)
             slice_start = start
             while slice_start < end:
@@ -283,14 +425,14 @@ class GdeltAgent(BaseIngestionAgent):
                 try:
                     articles = await self._fetch_doc_slice(client, slice_start, slice_end)
                 except Exception as exc:
-                    logger.warning("[gdelt/docapi] slice %s–%s failed: %s",
+                    logger.warning("[gdelt/docapi] slice %s–%s failed after retries: %s — "
+                                   "trying GKG CSV fallback",
                                    slice_start.date(), slice_end.date(), exc)
                     articles = []
 
                 kept = 0
                 for art in articles:
-                    # Post-filter: skip non-English articles (belt-and-suspenders
-                    # alongside the sourcelang:eng query filter)
+                    # Post-filter: skip non-English articles
                     lang = art.get("language", "")
                     if lang and lang not in _KEEP_LANGUAGES:
                         continue
@@ -319,13 +461,31 @@ class GdeltAgent(BaseIngestionAgent):
 
                 logger.info("[gdelt/docapi] slice %s–%s: %d articles (%d new)",
                             slice_start.date(), slice_end.date(), len(articles), kept)
+
+                # GKG CSV fallback: kick in when DOC API returned nothing for this slice
+                if kept == 0:
+                    logger.info("[gdelt/gkg] DOC API empty for %s–%s — trying GKG CSV",
+                                slice_start.date(), slice_end.date())
+                    try:
+                        gkg_items = await self._pull_gkg_slice(
+                            client, slice_start, slice_end, seen_urls
+                        )
+                        items.extend(gkg_items)
+                        gkg_slices += 1
+                        logger.info("[gdelt/gkg] slice %s–%s: %d articles via GKG CSV",
+                                    slice_start.date(), slice_end.date(), len(gkg_items))
+                    except Exception as exc:
+                        logger.warning("[gdelt/gkg] slice %s–%s failed: %s",
+                                       slice_start.date(), slice_end.date(), exc)
+
                 total_slices += 1
                 slice_start = slice_end
                 if slice_start < end:
-                    await asyncio.sleep(8.0)  # GDELT states 1 req/5s — 8s gives safe margin
+                    await asyncio.sleep(8.0)  # GDELT states 1 req/5s — 8s is safe margin
 
-        logger.info("[gdelt/docapi] Total: %d unique articles across %d slice(s)",
-                    len(items), total_slices)
+        logger.info("[gdelt/docapi] Total: %d unique articles across %d slice(s) "
+                    "(%d used GKG CSV fallback)",
+                    len(items), total_slices, gkg_slices)
         return items
 
     # ── Main entry ────────────────────────────────────────────────────────────

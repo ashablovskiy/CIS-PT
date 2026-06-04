@@ -30,10 +30,13 @@ class ScoredItem(BaseModel):
     rule_score: float = 0.0
     llm_score: float | None = None
     llm_reasoning: str | None = None
-    # Strict tiering + controlled-vocabulary impact type (new in scorer v2)
+    # Strict tiering + controlled-vocabulary impact type (scorer v2)
     impact_tier: int | None = None       # 1=high … 4=noise
     impact_type: str | None = None       # e.g. "GOES input cost", "Lane disruption"
     mechanism: str | None = None         # short causal sentence
+    # Scorer v3 enrichment
+    signal_kind: str | None = None       # event type category (price_move, capacity_change, …)
+    what_changed: str | None = None      # factual one-sentence description of the change
     decision: str | None = None  # discard | review | classify | escalate
 
 

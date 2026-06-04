@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ANT Actor Map — Power Transformer Supply Web</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #f7f6f3; color: #1a1a1a; min-height: 100vh;
+    display: flex; align-items: flex-start; justify-content: center; padding: 44px 28px 72px;
+  }
+  .wrap { width: 1120px; }
+
+  .header { margin-bottom: 18px; }
+  .header-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #9b9a97; margin-bottom: 6px; }
+  .header-title { font-size: 23px; font-weight: 700; letter-spacing: -0.3px; }
+  .header-sub { font-size: 13.5px; color: #6b6b6b; margin-top: 8px; line-height: 1.55; max-width: 880px; }
+  .header-sub b { color: #1a1a1a; font-weight: 600; }
+
+  .frame { border: 1.5px solid #e3e2e0; border-radius: 12px; background: #fbfaf8; padding: 16px 18px 10px; }
+  .stage { position: relative; width: 1080px; height: 680px; margin: 0 auto; }
+  .stage svg { position: absolute; inset: 0; width: 1080px; height: 680px; z-index: 1; overflow: visible; }
+
+  .band-label {
+    position: absolute; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: 0.09em;
+    text-transform: uppercase; color: #b0afa9;
+  }
+
+  .actor {
+    position: absolute; z-index: 3; width: 188px; border-radius: 11px; padding: 11px 13px;
+    border: 1.5px solid #e3e2e0; background: #fff; cursor: pointer;
+    transition: transform .12s, box-shadow .12s, border-color .12s;
+  }
+  .actor:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .actor .a-name { font-size: 13.5px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.2; }
+  .actor .a-def  { font-size: 10.5px; color: #7c7b77; margin-top: 4px; line-height: 1.4; }
+  .actor .a-iw {
+    position: absolute; top: 9px; right: 11px; font-size: 10px; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: #9b9a97;
+  }
+
+  /* criticality accents */
+  .c-critical { border-color: #e3b6aa; background: #fdf4f1; }
+  .c-critical .a-name { color: #a3402c; }
+  .c-high     { border-color: #e8d5a3; background: #fdf9ef; }
+  .c-high .a-name { color: #8a6a1c; }
+  .c-medium   { border-color: #c8d8f0; background: #f5f8fd; }
+  .c-medium .a-name { color: #3f6090; }
+
+  .hub { width: 210px; box-shadow: 0 4px 16px rgba(163,64,44,.12); }
+  .hub .a-name { font-size: 15px; }
+
+  /* arrows */
+  .edge { fill: none; stroke-linecap: round; transition: opacity .15s, stroke-width .15s; }
+  .e-constrains { stroke: #c0563f; }   /* supply limits production */
+  .e-pressures  { stroke: #3a7d44; stroke-dasharray: 1 7; }  /* demand pulls */
+  .e-gates      { stroke: #2c2b28; }   /* serial gate */
+  .e-amplifies  { stroke: #c89a3a; stroke-dasharray: 6 5; }  /* cross-cutting */
+  svg.dim .edge { opacity: 0.12; }
+  svg.dim .edge.lit { opacity: 1; }
+  .hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+
+  .legend { display: flex; gap: 22px; flex-wrap: wrap; padding: 12px 4px 4px; }
+  .leg { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #5c5b57; }
+  .leg svg { width: 34px; height: 10px; overflow: visible; }
+  .leg b { color: #2c2b28; font-weight: 600; }
+
+  .detail {
+    margin-top: 14px; border: 1.5px solid #e3e2e0; border-radius: 10px; background: #fff;
+    padding: 15px 18px; min-height: 92px;
+  }
+  .d-hint { font-size: 12.5px; color: #9b9a97; font-style: italic; }
+  .d-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; flex-wrap: wrap; }
+  .d-pill { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; border: 1.5px solid; }
+  .d-title { font-size: 15px; font-weight: 700; }
+  .d-iw { font-size: 11px; color: #9b9a97; font-weight: 600; }
+  .d-def { font-size: 13px; color: #2f2e2b; line-height: 1.55; margin-bottom: 6px; }
+  .d-why { font-size: 12.5px; color: #5c5b57; line-height: 1.55; }
+  .d-feed { margin-top: 9px; font-size: 11px; color: #8a8984; }
+  .d-feed b { color: #6b6a66; font-weight: 600; }
+  .d-feed code { background: #f2f1ee; border-radius: 4px; padding: 1px 5px; font-size: 10.5px; color: #5c5b57; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="header-label">Power Transformer Intelligence · Layer 2</div>
+    <div class="header-title">ANT Actor Map — the systemic forces, not the companies</div>
+    <div class="header-sub">
+      Twelve <b>actors</b>: structural forces, constraints and roles that govern transformer supply.
+      An actor is "the scarcity of GOES," not "Nippon Steel" — specific mills, plants and ports live in
+      Layer 1 and <b>roll up</b> into these. Arrows show how forces act on each other; everything
+      converges on <b>OEM Production Capacity</b>. Click an actor for its definition and what feeds it.
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="stage">
+
+      <!-- band labels -->
+      <div class="band-label" style="left:8px;   top:70px;">◀ Material inputs &amp; components (supply)</div>
+      <div class="band-label" style="left:430px; top:24px;">Trade &amp; geopolitics ↓ (cross-cutting)</div>
+      <div class="band-label" style="left:455px; top:372px;">Production (convergence)</div>
+      <div class="band-label" style="left:455px; top:556px;">Logistics (exit gate)</div>
+      <div class="band-label" style="left:838px; top:70px;">Demand pull ▶</div>
+
+      <svg id="svg" viewBox="0 0 1080 680">
+        <defs>
+          <marker id="m-con" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c0563f"/></marker>
+          <marker id="m-pre" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3a7d44"/></marker>
+          <marker id="m-gat" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2c2b28"/></marker>
+          <marker id="m-amp" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c89a3a"/></marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="hits"></g>
+      </svg>
+
+      <div id="actors"></div>
+    </div>
+
+    <div class="legend">
+      <div class="leg"><svg viewBox="0 0 34 10"><line x1="2" y1="5" x2="26" y2="5" stroke="#c0563f" stroke-width="2.4"/><path d="M26,2 L32,5 L26,8 Z" fill="#c0563f"/></svg><span><b>Constrains</b> — supply limits production</span></div>
+      <div class="leg"><svg viewBox="0 0 34 10"><line x1="2" y1="5" x2="26" y2="5" stroke="#3a7d44" stroke-width="2.4" stroke-dasharray="1 6"/><path d="M26,2 L32,5 L26,8 Z" fill="#3a7d44"/></svg><span><b>Pressures</b> — demand pulls</span></div>
+      <div class="leg"><svg viewBox="0 0 34 10"><line x1="2" y1="5" x2="26" y2="5" stroke="#2c2b28" stroke-width="2.4"/><path d="M26,2 L32,5 L26,8 Z" fill="#2c2b28"/></svg><span><b>Gates</b> — must pass through</span></div>
+      <div class="leg"><svg viewBox="0 0 34 10"><line x1="2" y1="5" x2="26" y2="5" stroke="#c89a3a" stroke-width="2.4" stroke-dasharray="5 4"/><path d="M26,2 L32,5 L26,8 Z" fill="#c89a3a"/></svg><span><b>Amplifies</b> — cross-cutting force</span></div>
+    </div>
+
+    <div class="detail" id="detail">
+      <div class="d-hint">Click an actor to see what it is, why it matters, and which Layer-1 entities roll up into it.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Actor data (mirrors apps/api/network/actor_map.py) ──────────────────────
+const ACTORS = {
+  GOES_Supply:            {label:"GOES Supply", band:"material_inputs", crit:"critical", iw:0.95,
+    x:8,y:190, def:"Structural scarcity of grain-oriented electrical steel — the transformer core material.",
+    why:"~10 capable mills worldwide, processing- and know-how-bound (not ore-bound), multi-year qualification, prices up 60–77% since 2020. The single hardest constraint in the industry.",
+    feed:"Commodity:GOES · Material:GOES_* · Supplier(goes_mill) · Plant(goes_mill)"},
+  Winding_Metals:         {label:"Winding Metals", band:"material_inputs", crit:"high", iw:0.70,
+    x:8,y:288, def:"Copper (and aluminum for distribution) for the windings.",
+    why:"Globally available, so rarely an availability bottleneck — but highly price-volatile, the main material cost driver.",
+    feed:"Commodity:Copper · Commodity:Aluminum · Material:Cu_* · Material:Al_*"},
+  Insulation_Dielectrics: {label:"Insulation & Dielectrics", band:"material_inputs", crit:"high", iw:0.62,
+    x:8,y:92, def:"Pressboard, aramid paper, naphthenic oil and ester fluids — the dielectric system.",
+    why:"Concentrated suppliers (Weidmann, DuPont Nomex) and refining-constrained naphthenic oil; long approval cycles. Elevated, not binding.",
+    feed:"Commodity:Transformer_Oil_Naphthenic · Cellulose_Pressboard · Aramid_Paper · Ester_Fluid · Supplier(insulation/oil)"},
+  Critical_Components:    {label:"Critical Components", band:"components", crit:"critical", iw:0.88,
+    x:8,y:404, def:"On-load tap changers (OLTC) and HV bushings — certified, few-supplier sub-assemblies.",
+    why:"OLTCs (Reinhausen-dominated) and bushings (Trench/HSP) are certified per application; one late part holds the whole transformer.",
+    feed:"Supplier(tap_changer_oltc) · Supplier(bushings) · Material:OLTC_* · Material:Bushing_*"},
+  Skilled_Labor:          {label:"Skilled Labor", band:"production", crit:"high", iw:0.60,
+    x:446,y:240, def:"The specialised workforce — coil winders, core stackers, HV test engineers.",
+    why:"Capacity is useless without trained winders. Strikes / retirements / hiring gate output. Weak direct entity backing in Layer 1 — fed mainly by labor-themed signals.",
+    feed:"signal(impact_type ~ labor) · Plant(large_power) [labor events]"},
+  OEM_Production_Capacity:{label:"OEM Production Capacity", band:"production", crit:"critical", iw:0.92, hub:true,
+    x:435,y:402, def:"Aggregate transformer-manufacturing throughput and backlog across all OEMs.",
+    why:"The convergence point: materials, components and labor combine here and demand queues form here. Slots booked 2–4 years out. Where almost every pressure path lands.",
+    feed:"Supplier(transformer_oem) · Plant(large_power/uhv/hvdc/gsu/data_center_class/…) · Category(all)"},
+  Heavy_Lift_Logistics:   {label:"Heavy-Lift Logistics", band:"logistics", crit:"high", iw:0.68,
+    x:446,y:584, def:"Capacity to move 100–400 t finished units: breakbulk vessels, Schnabel rail, permits, heavy-lift ports.",
+    why:"Finished transformers can't move by container. Few Schnabel cars (~3 in N. America), permits up to ~9 months, port congestion. Adds months downstream of the factory.",
+    feed:"Commodity:Heavy_Lift_Freight · Port(all) · Lane(all)"},
+  Trade_Policy_Regime:    {label:"Trade & Policy Regime", band:"trade_geo", crit:"high", iw:0.72,
+    x:435,y:56, def:"Tariffs, AD/CVD duties, export controls and sanctions touching steel, components or units.",
+    why:"Section 232, AD/CVD on GOES, export controls can tighten supply or reroute trade overnight. Cross-cutting amplifier. Fed mainly by 'Regulatory / trade' signals + Country flags.",
+    feed:"signal(impact_type=Regulatory / trade) · Country(trade events)"},
+  Geographic_Concentration:{label:"Geographic Concentration", band:"trade_geo", crit:"high", iw:0.70,
+    x:642,y:56, def:"Structural dependence on a few producing regions and the chokepoints connecting them.",
+    why:"GOES mills and Tier-1 OEM capacity cluster in KR/JP/CN/DE; US-bound exports funnel through Panama/Suez and a few ports. One regional shock exposes the whole chain.",
+    feed:"Country(goes_producer) · Country(oem_hub) · Lane(chokepoint≠none)"},
+  AI_Datacenter_Demand:   {label:"AI / Data-Center Demand", band:"demand", crit:"critical", iw:0.90,
+    x:838,y:200, def:"The hyperscaler / AI-compute build-out pulling transformers out of the global queue.",
+    why:"Pushes demand from ~1,500 toward ~9,000 units/yr by 2030. Developers pre-buy factory slots, so the backlog itself becomes the constraint for everyone behind them.",
+    feed:"DemandSource(theme=Data_Center_AI_Demand) · actors: Microsoft, Google, Amazon, Meta, OpenAI, Anthropic, Oracle, CoreWeave…"},
+  Grid_Modernization_Demand:{label:"Grid Modernization Demand", band:"demand", crit:"critical", iw:0.85,
+    x:838,y:316, def:"Aging-grid replacement, electrification and renewable interconnection — the structural demand base.",
+    why:"US fleet average age >40 yr; electrification + renewables flood the interconnection queue. Slower than AI but larger and permanent.",
+    feed:"DemandSource(theme=Grid_Replacement_Aging · Renewable_Interconnection · Electrification)"},
+  Energy_Transition_Policy:{label:"Energy-Transition Policy", band:"demand", crit:"high", iw:0.62,
+    x:838,y:92, def:"Public stimulus that accelerates demand: IRA, REPowerEU, grid-funding and electrification mandates.",
+    why:"Doesn't consume transformers itself — it accelerates the grid and DC demand actors, pulling demand forward in time.",
+    feed:"DemandSource(theme=IRA_Grid_Investment · REPowerEU · policy themes)"},
+};
+
+const EDGES = [
+  ["CONSTRAINS","GOES_Supply","OEM_Production_Capacity",0.95],
+  ["CONSTRAINS","Critical_Components","OEM_Production_Capacity",0.90],
+  ["CONSTRAINS","Winding_Metals","OEM_Production_Capacity",0.70],
+  ["CONSTRAINS","Insulation_Dielectrics","OEM_Production_Capacity",0.65],
+  ["CONSTRAINS","Skilled_Labor","OEM_Production_Capacity",0.65],
+  ["GATES","OEM_Production_Capacity","Heavy_Lift_Logistics",0.70],
+  ["PRESSURES","AI_Datacenter_Demand","OEM_Production_Capacity",0.90],
+  ["PRESSURES","Grid_Modernization_Demand","OEM_Production_Capacity",0.85],
+  ["PRESSURES","AI_Datacenter_Demand","Critical_Components",0.55],
+  ["PRESSURES","Grid_Modernization_Demand","Heavy_Lift_Logistics",0.50],
+  ["AMPLIFIES","Energy_Transition_Policy","Grid_Modernization_Demand",0.70],
+  ["AMPLIFIES","Energy_Transition_Policy","AI_Datacenter_Demand",0.40],
+  ["AMPLIFIES","Trade_Policy_Regime","GOES_Supply",0.70],
+  ["AMPLIFIES","Trade_Policy_Regime","OEM_Production_Capacity",0.60],
+  ["AMPLIFIES","Geographic_Concentration","GOES_Supply",0.65],
+  ["AMPLIFIES","Geographic_Concentration","OEM_Production_Capacity",0.60],
+  ["AMPLIFIES","Geographic_Concentration","Heavy_Lift_Logistics",0.65],
+  ["AMPLIFIES","Trade_Policy_Regime","Geographic_Concentration",0.55],
+];
+
+const CRIT_PILL = { critical:"p-crit", high:"p-high", medium:"p-medium" };
+const W = 188, HUBW = 210;
+
+// ── render actor cards ──────────────────────────────────────────────────────
+const actorsEl = document.getElementById("actors");
+const nodeH = {}; // measured heights
+Object.entries(ACTORS).forEach(([id,a]) => {
+  const el = document.createElement("div");
+  el.className = `actor c-${a.crit}` + (a.hub ? " hub" : "");
+  el.id = "actor-"+id;
+  el.style.left = a.x+"px"; el.style.top = a.y+"px";
+  el.innerHTML = `<div class="a-iw">${a.iw.toFixed(2)}</div>
+    <div class="a-name">${a.label}</div>
+    <div class="a-def">${a.def.length>62?a.def.slice(0,60)+"…":a.def}</div>`;
+  el.onclick = () => select(id);
+  actorsEl.appendChild(el);
+});
+
+// anchor points
+function rect(id){ const a=ACTORS[id]; const w=a.hub?HUBW:W; const el=document.getElementById("actor-"+id);
+  const h = el.offsetHeight || 64; return {x:a.x,y:a.y,w,h}; }
+function anchor(id, side){ const r=rect(id);
+  if(side==="r") return [r.x+r.w, r.y+r.h/2];
+  if(side==="l") return [r.x, r.y+r.h/2];
+  if(side==="t") return [r.x+r.w/2, r.y];
+  if(side==="b") return [r.x+r.w/2, r.y+r.h/2+r.h/2];
+  return [r.x+r.w/2, r.y+r.h/2];
+}
+function center(id){ const r=rect(id); return [r.x+r.w/2, r.y+r.h/2]; }
+
+// choose anchors by relative geometry
+function endpoints(src,dst){
+  const s=rect(src), d=rect(dst);
+  const sc=[s.x+s.w/2,s.y+s.h/2], dc=[d.x+d.w/2,d.y+d.h/2];
+  let p1,p2;
+  if (Math.abs(dc[0]-sc[0]) >= Math.abs(dc[1]-sc[1])) {
+    // horizontal dominant
+    if (dc[0]>=sc[0]) { p1=[s.x+s.w, sc[1]]; p2=[d.x, dc[1]]; }
+    else              { p1=[s.x, sc[1]];     p2=[d.x+d.w, dc[1]]; }
+  } else {
+    if (dc[1]>=sc[1]) { p1=[sc[0], s.y+s.h]; p2=[dc[0], d.y]; }
+    else              { p1=[sc[0], s.y];     p2=[dc[0], d.y+d.h]; }
+  }
+  return [p1,p2];
+}
+
+const TYPE_CLS = {CONSTRAINS:"e-constrains",PRESSURES:"e-pressures",GATES:"e-gates",AMPLIFIES:"e-amplifies"};
+const TYPE_MARK = {CONSTRAINS:"m-con",PRESSURES:"m-pre",GATES:"m-gat",AMPLIFIES:"m-amp"};
+
+const edgesEl = document.getElementById("edges");
+const hitsEl = document.getElementById("hits");
+const edgePaths = [];
+
+function curve(p1,p2){
+  const dx=(p2[0]-p1[0]), dy=(p2[1]-p1[1]);
+  const mx=p1[0]+dx*0.5, my=p1[1]+dy*0.5;
+  // slight bow
+  const cx = mx - dy*0.08, cy = my + dx*0.08;
+  return `M${p1[0]},${p1[1]} Q${cx},${cy} ${p2[0]},${p2[1]}`;
+}
+
+EDGES.forEach((e,i)=>{
+  const [type,src,dst,w]=e;
+  const [p1,p2]=endpoints(src,dst);
+  const d=curve(p1,p2);
+  const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+  path.setAttribute("d",d);
+  path.setAttribute("class",`edge ${TYPE_CLS[type]}`);
+  path.setAttribute("stroke-width", (1.2 + w*2.2).toFixed(2));
+  path.setAttribute("marker-end",`url(#${TYPE_MARK[type]})`);
+  path.dataset.src=src; path.dataset.dst=dst;
+  edgesEl.appendChild(path);
+  edgePaths.push(path);
+
+  const hit=document.createElementNS("http://www.w3.org/2000/svg","path");
+  hit.setAttribute("d",d); hit.setAttribute("class","hit");
+  hitsEl.appendChild(hit);
+});
+
+// ── selection / detail ──────────────────────────────────────────────────────
+const svg=document.getElementById("svg");
+const detail=document.getElementById("detail");
+
+function select(id){
+  const a=ACTORS[id];
+  svg.classList.add("dim");
+  edgePaths.forEach(p=>{
+    const lit = p.dataset.src===id || p.dataset.dst===id;
+    p.classList.toggle("lit", lit);
+  });
+  // connections summary
+  const outs = EDGES.filter(e=>e[1]===id).map(e=>`${e[0].toLowerCase()} → ${ACTORS[e[2]].label}`);
+  const ins  = EDGES.filter(e=>e[2]===id).map(e=>`${ACTORS[e[1]].label} ${e[0].toLowerCase()} this`);
+  const conn = [...ins, ...outs];
+  detail.innerHTML =
+    `<div class="d-head"><span class="d-pill ${CRIT_PILL[a.crit]}">${a.crit}</span>
+       <span class="d-title">${a.label}</span><span class="d-iw">systemic weight ${a.iw.toFixed(2)}</span></div>
+     <div class="d-def">${a.def}</div>
+     <div class="d-why">${a.why}</div>
+     <div class="d-feed"><b>Rolls up from (Layer 1):</b> <code>${a.feed}</code></div>` +
+    (conn.length? `<div class="d-feed"><b>Network links:</b> ${conn.join(" · ")}</div>`:"");
+}
+
+document.querySelectorAll(".hit").forEach((h,i)=>{
+  h.onclick=()=>{ const p=edgePaths[i]; select(p.dataset.src); };
+});
+
+// pill colors reuse criticality classes inside detail
+const style=document.createElement("style");
+style.textContent=`.p-crit{color:#a3402c;border-color:#e3b6aa;background:#fbeee9}
+.p-high{color:#8a6a1c;border-color:#e8d5a3;background:#fdf8e8}
+.p-medium{color:#3f6090;border-color:#c8d8f0;background:#eef3fb}`;
+document.head.appendChild(style);
+
+// redraw edges after layout settles (heights known)
+requestAnimationFrame(()=>{
+  edgePaths.forEach((path,i)=>{
+    const [type,src,dst]=EDGES[i];
+    const [p1,p2]=endpoints(src,dst);
+    const d=curve(p1,p2);
+    path.setAttribute("d",d);
+    document.querySelectorAll(".hit")[i].setAttribute("d",d);
+  });
+});
+</script>
+</body>
+</html>

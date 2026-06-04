@@ -20,9 +20,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from apps.api.budget import BudgetExceededError, budgeted_client
@@ -65,7 +66,14 @@ def _content_hash(payload: dict[str, Any]) -> str:
 
 
 def _make_asyncpg_engine(url: str):
-    """Create an async engine stripping sslmode (psycopg2-style) and passing ssl=True to asyncpg."""
+    """Create an async engine stripping sslmode (psycopg2-style) and passing ssl=True to asyncpg.
+
+    Uses NullPool — no connection is held between operations. This is the recommended
+    approach for Neon serverless (and any serverless Postgres) where idle connections
+    are dropped by the server after ~5 minutes, causing reconnection failures in long-
+    running scripts. NullPool creates a fresh TCP connection for each DB session and
+    closes it immediately — eliminating all idle-connection timeout failures.
+    """
     from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     parsed = urlparse(url)
@@ -74,7 +82,11 @@ def _make_asyncpg_engine(url: str):
     new_query = urlencode({k: v[0] for k, v in params.items()})
     clean_url = urlunparse(parsed._replace(query=new_query))
     connect_args = {"ssl": True} if ssl_mode in ("require", "verify-ca", "verify-full") else {}
-    return create_async_engine(clean_url, pool_pre_ping=True, connect_args=connect_args)
+    return create_async_engine(
+        clean_url,
+        poolclass=NullPool,   # no idle connections — safe for Neon serverless
+        connect_args=connect_args,
+    )
 
 
 def _make_engine():
@@ -187,7 +199,25 @@ class BaseIngestionAgent(ABC):
 
         for i in range(0, len(state.pre_filtered), batch_size):
             batch = state.pre_filtered[i : i + batch_size]
-            scored_batch = await self._score_batch(batch)
+            try:
+                scored_batch = await self._score_batch(batch)
+            except Exception as exc:
+                # LLM unavailable (API timeout, budget exhausted, etc.) — fall
+                # back to rule-based scoring: assign 0.4 (review tier) so items
+                # are persisted for later manual review rather than lost.
+                logger.warning(
+                    "[%s] LLM batch %d-%d failed (%s) — using rule-based fallback (score=0.4)",
+                    self.agent_name, i, i + len(batch), type(exc).__name__,
+                )
+                scored_batch = [
+                    ScoredItem(
+                        item=item,
+                        rule_score=1.0,
+                        llm_score=0.4,
+                        llm_reasoning="llm_unavailable_rule_fallback",
+                    )
+                    for item in batch
+                ]
             scored.extend(scored_batch)
 
         state.llm_scored = scored
@@ -268,6 +298,8 @@ class BaseIngestionAgent(ABC):
                     impact_tier=tier,
                     impact_type=score_obj.get("impact_type"),
                     mechanism=score_obj.get("mechanism"),
+                    signal_kind=score_obj.get("signal_kind"),
+                    what_changed=score_obj.get("what_changed"),
                 )
             )
         # Items beyond what the LLM returned get a neutral score (won't escalate)
@@ -309,11 +341,35 @@ class BaseIngestionAgent(ABC):
         return state
 
     async def _persist_signals(self, items: list[ScoredItem]) -> None:
+        # ── Pre-compute event-clustering embeddings (outside DB transaction) ──
+        # One batch Voyage API call for all items in this persist batch.
+        # Embeddings are stored on signals.embedding and used to assign event_id,
+        # which prevents multiple news sources covering the same event from each
+        # contributing full pressure to ANT nodes.
+        cluster_embeddings: list[list[float] | None] = [None] * len(items)
+        try:
+            from apps.api.assess.embeddings import embed_texts
+            from apps.api.network.event_cluster import payload_to_cluster_text
+            texts = [payload_to_cluster_text(s.item.raw_payload) for s in items]
+            vecs = await embed_texts(texts)
+            for i, v in enumerate(vecs):
+                cluster_embeddings[i] = v
+        except Exception as exc:
+            logger.warning(
+                "[%s] Event-clustering embedding failed (%s) — "
+                "signals will be stored without event_id assignment.",
+                self.agent_name, exc,
+            )
+
         async with self._session_factory() as session:
             async with session.begin():
-                for scored in items:
+                # ── Pass 1: insert signals, relevance rows, and actor links ───
+                # We store the embedding on the signal row here so it is
+                # visible to the within-batch cluster query in Pass 2.
+                new_signal_ids: list[Any] = []  # None = signal already existed
+
+                for scored, embedding in zip(items, cluster_embeddings):
                     item = scored.item
-                    # Upsert into signals (ON CONFLICT DO NOTHING for dedup).
                     stmt = (
                         insert(Signal)
                         .values(
@@ -323,6 +379,7 @@ class BaseIngestionAgent(ABC):
                             url=item.url,
                             occurred_at=item.occurred_at,
                             content_hash=item.content_hash,
+                            embedding=embedding,  # may be None if Voyage failed
                         )
                         .on_conflict_do_nothing(constraint="uq_signal_source_id")
                         .returning(Signal.id)
@@ -330,7 +387,7 @@ class BaseIngestionAgent(ABC):
                     result = await session.execute(stmt)
                     row = result.fetchone()
                     if row is None:
-                        # Already existed — fetch existing id for the relevance row.
+                        # Signal already existed — fetch its id for relevance row.
                         existing = await session.execute(
                             select(Signal.id).where(
                                 Signal.source == item.source,
@@ -338,8 +395,10 @@ class BaseIngestionAgent(ABC):
                             )
                         )
                         signal_id = existing.scalar_one_or_none()
+                        new_signal_ids.append(None)  # mark as pre-existing
                     else:
                         signal_id = row[0]
+                        new_signal_ids.append(signal_id)
 
                     if signal_id is None:
                         continue
@@ -357,6 +416,9 @@ class BaseIngestionAgent(ABC):
                             reasoning=scored.llm_reasoning,
                             impact_type=scored.impact_type,
                             impact_tier=scored.impact_tier,
+                            mechanism=scored.mechanism,
+                            signal_kind=scored.signal_kind,
+                            what_changed=scored.what_changed,
                         )
                         .on_conflict_do_update(
                             index_elements=["signal_id"],
@@ -366,6 +428,9 @@ class BaseIngestionAgent(ABC):
                                 "reasoning": scored.llm_reasoning,
                                 "impact_type": scored.impact_type,
                                 "impact_tier": scored.impact_tier,
+                                "mechanism": scored.mechanism,
+                                "signal_kind": scored.signal_kind,
+                                "what_changed": scored.what_changed,
                             },
                         )
                     )
@@ -385,6 +450,53 @@ class BaseIngestionAgent(ABC):
                     except Exception as exc:
                         logger.debug("[%s] actor grounding skipped: %s",
                                      self.agent_name, exc)
+
+                # ── Flush so Pass-1 inserts are visible within this transaction ─
+                # Required for within-batch cross-source dedup: if Reuters and
+                # Bloomberg both arrive in the same ingest run, Bloomberg must
+                # be able to find Reuters in the cluster query.
+                await session.flush()
+
+                # ── Pass 2: assign event_ids to newly inserted signals ─────────
+                from apps.api.network.event_cluster import find_event_cluster
+
+                clustered_count = 0
+                for scored, embedding, sig_id in zip(
+                    items, cluster_embeddings, new_signal_ids
+                ):
+                    # Skip: signal already existed, or embedding unavailable.
+                    if sig_id is None or embedding is None:
+                        continue
+                    try:
+                        event_id = await find_event_cluster(
+                            session,
+                            sig_id,
+                            embedding,
+                            scored.item.occurred_at,
+                            scored.item.source,
+                        )
+                        await session.execute(
+                            update(Signal)
+                            .where(Signal.id == sig_id)
+                            .values(event_id=event_id)
+                        )
+                        if event_id != sig_id:
+                            clustered_count += 1
+                            logger.info(
+                                "[%s] Clustered signal %s → canonical event %s",
+                                self.agent_name, sig_id, event_id,
+                            )
+                    except Exception as exc:
+                        logger.debug(
+                            "[%s] Event-cluster assignment failed for %s: %s",
+                            self.agent_name, sig_id, exc,
+                        )
+
+                if clustered_count:
+                    logger.info(
+                        "[%s] Event clustering: %d/%d signals merged into existing clusters",
+                        self.agent_name, clustered_count, len(items),
+                    )
 
     async def _store_telemetry(self, state: IngestionState) -> None:
         cost = budgeted_client.daily_spend(_HAIKU)

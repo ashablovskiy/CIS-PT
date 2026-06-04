@@ -42,6 +42,12 @@ class ClassificationResult(BaseModel):
     impact_dimensions: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     reasoning: str = ""
+    # Triage v2 enrichment
+    secondary_event_classes: list[str] = Field(default_factory=list)
+    state_change: dict[str, str] = Field(
+        default_factory=dict,
+        description="what/direction/magnitude of the observed change",
+    )
 
     @property
     def valid_impact_dimensions(self) -> list[ImpactDimension]:

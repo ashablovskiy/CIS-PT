@@ -84,9 +84,10 @@ def _make_asyncpg_engine(url: str):
     new_query = urlencode({k: v[0] for k, v in params.items()})
     clean_url = urlunparse(parsed._replace(query=new_query))
     connect_args = {"ssl": True} if ssl_mode in ("require", "verify-ca", "verify-full") else {}
-    # 30 s gives Neon pooler enough time to wake a cold compute (typically 5-15 s)
-    # without hanging indefinitely (asyncpg default is 60 s).
-    connect_args["timeout"] = 30
+    # 60 s — matches asyncpg default but made explicit; Neon pooler cold-start
+    # can take 30-45 s in some regions. Railway proxy has its own 30 s limit so
+    # we keep the API health-check capped separately via asyncio.wait_for.
+    connect_args["timeout"] = 60
     return create_async_engine(
         clean_url,
         poolclass=NullPool,   # no idle connections — safe for Neon serverless

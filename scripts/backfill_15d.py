@@ -50,6 +50,7 @@ _AGENTS = {
     "demand":    ("apps.api.ingest.sources.demand_agent",    "DemandAgent"),
     "sec":       ("apps.api.ingest.sources.sec_agent",       "SecAgent"),
     "ir":        ("apps.api.ingest.sources.ir_agent",        "IrAgent"),
+    "mysteel":   ("apps.api.ingest.sources.mysteel_agent",   "MysteelAgent"),
 }
 
 

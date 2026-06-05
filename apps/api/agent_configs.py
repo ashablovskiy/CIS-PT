@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path(__file__).parent / "agent_configs.json"
 
-SOURCES = ["prices", "gdelt", "logistics", "press", "demand", "sec", "ir"]
+SOURCES = ["prices", "gdelt", "logistics", "press", "demand", "sec", "ir", "mysteel"]
 
 # Defaults match the cron cadences in agent_crons.py
 _DEFAULTS: dict[str, dict] = {
@@ -30,6 +30,7 @@ _DEFAULTS: dict[str, dict] = {
     "demand":    {"enabled": True, "schedule_mode": "interval", "interval_hours": 4,  "daily_hour": 0,  "lookback_hours": 5},
     "sec":       {"enabled": True, "schedule_mode": "daily",    "interval_hours": 24, "daily_hour": 6,  "lookback_hours": 25},
     "ir":        {"enabled": True, "schedule_mode": "interval", "interval_hours": 6,  "daily_hour": 0,  "lookback_hours": 8},
+    "mysteel":   {"enabled": True, "schedule_mode": "interval", "interval_hours": 6,  "daily_hour": 0,  "lookback_hours": 8},
 }
 
 ALLOWED_KEYS = {"enabled", "schedule_mode", "interval_hours", "daily_hour", "lookback_hours"}

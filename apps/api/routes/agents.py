@@ -27,6 +27,8 @@ _AGENT_MAP: dict[str, tuple[str, str]] = {
     "press":     ("apps.api.ingest.sources.press_agent",     "PressAgent"),
     "demand":    ("apps.api.ingest.sources.demand_agent",    "DemandAgent"),
     "sec":       ("apps.api.ingest.sources.sec_agent",       "SecAgent"),
+    "ir":        ("apps.api.ingest.sources.ir_agent",        "IrAgent"),
+    "mysteel":   ("apps.api.ingest.sources.mysteel_agent",   "MysteelAgent"),
 }
 
 

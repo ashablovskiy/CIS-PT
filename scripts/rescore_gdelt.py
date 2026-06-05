@@ -31,75 +31,119 @@ _REVIEW_THRESHOLD  = 0.3
 _ESCALATE_THRESHOLD = 0.6
 
 
-async def fetch_unscored(session, limit: int | None) -> list[tuple]:
-    """Return (signal_id, source, source_id, url, occurred_at, raw_payload)
-    for all GDELT signals that still carry the backfill placeholder score."""
-    from sqlalchemy import select, text
+def _get_conn():
+    """psycopg2 sync connection — more resilient than asyncpg for cold Neon starts."""
+    import psycopg2
+    from apps.api.settings import settings
+    url = settings.database_sync_url.replace("postgresql+psycopg2://", "postgresql://")
+    return psycopg2.connect(url, connect_timeout=90)
 
-    from apps.api.db.models import Signal, SignalRelevance
 
-    stmt = (
-        select(
-            Signal.id,
-            Signal.source,
-            Signal.source_id,
-            Signal.url,
-            Signal.occurred_at,
-            Signal.raw_payload,
-        )
-        .join(SignalRelevance, Signal.id == SignalRelevance.signal_id)
-        .where(
-            Signal.source == "gdelt",
-            SignalRelevance.reasoning == "backfill_rule_scored",
-        )
-        .order_by(Signal.occurred_at.desc())
-    )
+def fetch_unscored_sync(limit: int | None) -> list[tuple]:
+    """Return rows for all GDELT signals still carrying the backfill placeholder score."""
+    sql = """
+        SELECT s.id, s.source, s.source_id, s.url, s.occurred_at, s.raw_payload
+        FROM signals s
+        JOIN signal_relevance sr ON s.id = sr.signal_id
+        WHERE s.source = 'gdelt'
+          AND sr.reasoning = 'backfill_rule_scored'
+        ORDER BY s.occurred_at DESC
+    """
     if limit:
-        stmt = stmt.limit(limit)
+        sql += f" LIMIT {int(limit)}"
 
-    rows = await session.execute(stmt)
-    return rows.fetchall()
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            return cur.fetchall()
+    finally:
+        conn.close()
 
 
-async def update_relevance(session, signal_id, scored) -> None:
-    """Write the LLM-scored fields back to signal_relevance."""
-    from sqlalchemy import update
+def update_batch_sync(updates: list[tuple]) -> None:
+    """Bulk-update signal_relevance rows. Each tuple:
+    (llm_score, decision, reasoning, impact_tier, impact_type,
+     mechanism, signal_kind, what_changed, signal_id)
+    """
+    import psycopg2.extras
+    sql = """
+        UPDATE signal_relevance SET
+            llm_score    = %s,
+            decision     = %s,
+            reasoning    = %s,
+            impact_tier  = %s,
+            impact_type  = %s,
+            mechanism    = %s,
+            signal_kind  = %s,
+            what_changed = %s
+        WHERE signal_id = %s
+    """
+    conn = _get_conn()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_batch(cur, sql, updates, page_size=50)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
-    from apps.api.db.models import SignalRelevance
 
-    score = scored.llm_score or 0.0
-    if score >= _ESCALATE_THRESHOLD:
-        decision = "escalate"
-    elif score >= _REVIEW_THRESHOLD:
-        decision = "review"
-    else:
-        decision = "discard"
+async def _score_batch_direct(items_payload: list[dict]) -> list[dict]:
+    """Score a batch of raw_payloads using the relevance_scorer prompt directly.
+    Bypasses the Neo4j entity-priors lookup so it works when Neo4j is offline."""
+    import json
 
-    await session.execute(
-        update(SignalRelevance)
-        .where(SignalRelevance.signal_id == signal_id)
-        .values(
-            llm_score=score,
-            decision=decision,
-            reasoning=scored.llm_reasoning or "",
-            impact_tier=scored.impact_tier,
-            impact_type=scored.impact_type,
-            mechanism=scored.mechanism,
-            signal_kind=scored.signal_kind,
-            what_changed=scored.what_changed,
-        )
+    import anthropic
+
+    from apps.api.prompts.registry import registry as _prompt_registry
+
+    client = anthropic.AsyncAnthropic()
+
+    descriptions = []
+    for idx, payload in enumerate(items_payload, 1):
+        blob = json.dumps(payload, default=str)[:300]
+        descriptions.append(f"{idx}. source=gdelt url={payload.get('url', 'n/a')}\n{blob}")
+
+    user_msg = "Score each signal:\n\n" + "\n\n---\n\n".join(descriptions)
+
+    response = await client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2048,
+        system=await _prompt_registry.aget("relevance_scorer"),
+        messages=[{"role": "user", "content": user_msg}],
     )
+
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    try:
+        return json.loads(raw)
+    except Exception:
+        bracket = raw.rfind("},")
+        if bracket == -1:
+            bracket = raw.rfind("}")
+        partial = raw[: bracket + 1].rstrip().rstrip(",") + "]"
+        if not partial.startswith("["):
+            partial = "[" + partial
+        try:
+            return json.loads(partial)
+        except Exception:
+            return []
 
 
 async def main(args: argparse.Namespace) -> None:
-    from apps.api.db.session import async_session_factory
-    from apps.api.ingest.base import RawItem
-    from apps.api.ingest.sources.gdelt_agent import GdeltAgent
 
-    agent = GdeltAgent()   # inherits _score_batch from BaseIngestionAgent
-
-    async with async_session_factory() as session:
-        rows = await fetch_unscored(session, args.limit)
+    # Use psycopg2 sync for the query — avoids asyncpg cold-start failures
+    logger.info("Fetching un-scored GDELT signals from DB…")
+    rows = fetch_unscored_sync(args.limit)
 
     logger.info("Found %d GDELT signals to re-score", len(rows))
     if args.dry_run or not rows:
@@ -110,52 +154,68 @@ async def main(args: argparse.Namespace) -> None:
     ok = failed = 0
     t0_total = time.time()
 
-    # Process in batches of 5 (matches runner's batch size)
+    # Process in batches of 5 (matches runner's batch size for the scorer prompt)
     for batch_start in range(0, len(rows), _BATCH):
         batch_rows = rows[batch_start : batch_start + _BATCH]
 
-        # Build RawItem objects from DB rows
-        items = [
-            RawItem(
-                source=r.source,
-                source_id=r.source_id,
-                url=r.url,
-                occurred_at=r.occurred_at.replace(tzinfo=UTC)
-                if r.occurred_at.tzinfo is None else r.occurred_at,
-                raw_payload=r.raw_payload or {},
-            )
-            for r in batch_rows
-        ]
-
+        payloads = [r[5] or {} for r in batch_rows]
         try:
-            scored_items = await agent._score_batch(items)
+            score_objs = await _score_batch_direct(payloads)
         except Exception as exc:
-            logger.warning("Batch %d-%d scoring failed: %s",
+            logger.warning("Batch %d–%d scoring failed: %s",
                            batch_start, batch_start + len(batch_rows), exc)
             failed += len(batch_rows)
             continue
 
-        async with async_session_factory() as session:
-            async with session.begin():
-                for row, scored in zip(batch_rows, scored_items):
-                    try:
-                        await update_relevance(session, row.id, scored)
-                        ok += 1
-                    except Exception as exc:
-                        logger.warning("Update failed for %s: %s", row.id, exc)
-                        failed += 1
+        # Build update tuples
+        updates = []
+        for row, obj in zip(batch_rows, score_objs):
+            score = float(obj.get("relevance", 0.0))
+            decision = ("escalate" if score >= _ESCALATE_THRESHOLD
+                        else "review" if score >= _REVIEW_THRESHOLD
+                        else "discard")
+            tier = obj.get("tier")
+            try:
+                tier = int(tier) if tier is not None else None
+            except (TypeError, ValueError):
+                tier = None
+            updates.append((
+                score,
+                decision,
+                obj.get("reasoning", ""),
+                tier,
+                obj.get("impact_type"),
+                obj.get("mechanism"),
+                obj.get("signal_kind"),
+                obj.get("what_changed"),
+                row[0],  # signal_id UUID
+            ))
+        # Pad with fallbacks if LLM returned fewer items than input
+        for row in batch_rows[len(score_objs):]:
+            updates.append((0.0, "discard", "scoring_truncated",
+                            None, None, None, None, None, row[0]))
+
+        try:
+            update_batch_sync(updates)
+            ok += len(updates)
+        except Exception as exc:
+            logger.warning("DB update for batch %d failed: %s", batch_start, exc)
+            failed += len(batch_rows)
+            continue
 
         pct = (batch_start + len(batch_rows)) / len(rows) * 100
-        logger.info(
-            "Progress: %d/%d (%.0f%%) — ok=%d failed=%d",
-            batch_start + len(batch_rows), len(rows), pct, ok, failed,
-        )
-        # Brief pause to stay within rate limits
+        if score_objs:
+            s = score_objs[0]
+            logger.info(
+                "Progress: %d/%d (%.0f%%) | sample: score=%.2f tier=%s type=%s",
+                batch_start + len(batch_rows), len(rows), pct,
+                float(s.get("relevance", 0)), s.get("tier"), s.get("impact_type"),
+            )
         await asyncio.sleep(0.3)
 
     elapsed = time.time() - t0_total
     logger.info(
-        "════ done: ok=%d  failed=%d  (%.0fs, %.1f signals/min) ════",
+        "════ done: ok=%d  failed=%d  (%.0fs, %.1f/min) ════",
         ok, failed, elapsed, ok / elapsed * 60 if elapsed else 0,
     )
 

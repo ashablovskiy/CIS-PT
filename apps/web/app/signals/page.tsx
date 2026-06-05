@@ -667,8 +667,14 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
 
           {/* Error */}
           {status === "error" && (
-            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-              {message}
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex flex-col gap-1">
+              <p className="text-sm font-medium text-red-700">
+                {message.includes("404") ? "Page not found" :
+                 message.includes("403") ? "Access denied" :
+                 message.includes("too short") || message.includes("JavaScript") ? "Content unavailable" :
+                 "Failed to fetch"}
+              </p>
+              <p className="text-xs text-red-600 leading-relaxed">{message}</p>
             </div>
           )}
 

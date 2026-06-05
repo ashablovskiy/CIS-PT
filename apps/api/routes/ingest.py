@@ -59,27 +59,61 @@ _agent = _ManualAgent()
 
 # ── Content extractors ────────────────────────────────────────────────────────
 
+_SCRAPER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
 async def _extract_url(url: str) -> tuple[str, str]:
-    """Fetch a URL and return (title, body_text)."""
-    async with httpx.AsyncClient(
-        headers={"User-Agent": "cis-research/0.1 a.shablovskiy@gmail.com"},
-        follow_redirects=True,
-        timeout=20,
-    ) as client:
-        r = await client.get(url)
-        r.raise_for_status()
-        ct = r.headers.get("content-type", "")
-        if "text/html" not in ct and "text/plain" not in ct:
-            raise HTTPException(400, f"Unsupported content-type: {ct}")
-        html = r.text
+    """Fetch a URL and return (title, body_text) with clear error messages."""
+    try:
+        async with httpx.AsyncClient(
+            headers={
+                "User-Agent": _SCRAPER_UA,
+                "Accept": "text/html,application/xhtml+xml,*/*",
+                "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
+            },
+            follow_redirects=True,
+            timeout=25,
+        ) as client:
+            r = await client.get(url)
+    except httpx.TimeoutException:
+        raise HTTPException(504, "The page took too long to respond (>25 s). Try again or use a faster-loading URL.")
+    except httpx.ConnectError:
+        raise HTTPException(502, "Could not connect to the website. Check the URL is correct and the site is accessible.")
+    except httpx.TooManyRedirects:
+        raise HTTPException(502, "Too many redirects — the URL may require a login or subscription.")
+
+    if r.status_code == 404:
+        raise HTTPException(404, "Page not found (404). Try a direct article URL rather than a listing/search page.")
+    if r.status_code == 403:
+        raise HTTPException(403, "Access denied (403). The site blocks automated fetching. Try uploading the page as a file instead.")
+    if r.status_code == 429:
+        raise HTTPException(429, "Rate-limited by the site (429). Wait a moment and try again.")
+    if r.status_code >= 400:
+        raise HTTPException(502, f"The site returned HTTP {r.status_code}. Try a different URL or upload the content as a file.")
+
+    ct = r.headers.get("content-type", "")
+    if "pdf" in ct:
+        raise HTTPException(400, "This URL points to a PDF. Use the 'Upload File' tab instead — download the PDF and drop it there.")
+    if "text/html" not in ct and "text/plain" not in ct:
+        raise HTTPException(400, f"Unsupported content ({ct.split(';')[0]}). Only HTML pages and text files are supported.")
 
     from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "html.parser")
-    # Remove script/style noise
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
+    soup = BeautifulSoup(r.text, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
-    title = soup.title.string.strip() if soup.title and soup.title.string else url
-    body = re.sub(r"\s+", " ", soup.get_text(separator=" ")).strip()
+    title = (soup.title.string or "").strip() or url
+    body  = re.sub(r"\s+", " ", soup.get_text(separator=" ")).strip()
+
+    if len(body) < 100:
+        raise HTTPException(422,
+            "Page content is too short or JavaScript-rendered. "
+            "Try copying the text and uploading it as a .txt file, "
+            "or use the 'Upload File' tab with a PDF/screenshot."
+        )
     return title, body[:8000]
 
 
@@ -180,8 +214,10 @@ async def ingest_url(body: UrlRequest) -> dict:
 
     try:
         title, text = await _extract_url(url)
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Failed to fetch URL: {e}") from e
+    except HTTPException:
+        raise   # already has a user-friendly message
+    except Exception as e:
+        raise HTTPException(502, f"Unexpected error fetching URL: {e}") from e
 
     if len(text) < 50:
         raise HTTPException(422, "Page content too short to analyse")

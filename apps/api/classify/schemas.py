@@ -44,7 +44,7 @@ class ClassificationResult(BaseModel):
     reasoning: str = ""
     # Triage v2 enrichment
     secondary_event_classes: list[str] = Field(default_factory=list)
-    state_change: dict[str, str] = Field(
+    state_change: dict[str, str | None] = Field(
         default_factory=dict,
         description="what/direction/magnitude of the observed change",
     )

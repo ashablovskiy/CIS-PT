@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 
@@ -513,6 +513,203 @@ function FilterPill({
   );
 }
 
+// ── Add Signal Modal ──────────────────────────────────────────────────────────
+
+type IngestResult = {
+  relevance: number; tier: number | null;
+  impact_type: string | null; what_changed: string | null;
+  decision: string | null; persisted: boolean;
+};
+type IngestResponse = { title: string; excerpt: string; result: IngestResult | null };
+
+function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [tab,      setTab]      = useState<"url" | "file">("url");
+  const [url,      setUrl]      = useState("");
+  const [status,   setStatus]   = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [message,  setMessage]  = useState("");
+  const [result,   setResult]   = useState<IngestResponse | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const urlRef  = useRef<HTMLInputElement>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  // Focus URL input on open
+  useEffect(() => { urlRef.current?.focus(); }, []);
+
+  async function submit(body: BodyInit, endpoint: string, isForm = false) {
+    setStatus("loading"); setMessage(""); setResult(null);
+    try {
+      const r = await fetch(`${API}/api/ingest/${endpoint}`, {
+        method: "POST",
+        body,
+        ...(isForm ? {} : { headers: { "Content-Type": "application/json" } }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail ?? `Error ${r.status}`);
+      setResult(data);
+      setStatus("done");
+      if (data.result?.persisted) onAdded();
+    } catch (e: any) {
+      setStatus("error");
+      setMessage(e.message ?? "Something went wrong");
+    }
+  }
+
+  function handleUrl(e: React.FormEvent) {
+    e.preventDefault();
+    if (!url.trim()) return;
+    submit(JSON.stringify({ url: url.trim() }), "url");
+  }
+
+  function handleFile(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    submit(fd, "file", true);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
+
+  const TIER_COLOR: Record<number, string> = {
+    1: "text-red-600 bg-red-50 border-red-200",
+    2: "text-amber-600 bg-amber-50 border-amber-200",
+    3: "text-slate-500 bg-slate-50 border-slate-200",
+    4: "text-slate-400 bg-slate-50 border-slate-200",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-900">Add Signal Manually</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100">
+          {(["url", "file"] as const).map((t) => (
+            <button key={t} onClick={() => { setTab(t); setStatus("idle"); setResult(null); }}
+              className={`flex-1 py-2.5 text-sm font-medium transition-colors
+                ${tab === t ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-500 hover:text-slate-800"}`}>
+              {t === "url" ? "🔗  Paste URL" : "📎  Upload File"}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+
+          {tab === "url" && (
+            <form onSubmit={handleUrl} className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-slate-600">Web page URL</label>
+              <input
+                ref={urlRef}
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/article"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
+              />
+              <button type="submit" disabled={status === "loading" || !url.trim()}
+                className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold
+                  hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {status === "loading" ? "Analysing…" : "Analyse & Add"}
+              </button>
+            </form>
+          )}
+
+          {tab === "file" && (
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-slate-600">
+                PDF, DOCX, TXT, or image (PNG / JPG / WEBP) — max 20 MB
+              </label>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fileRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors
+                  ${dragging ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
+              >
+                <p className="text-3xl mb-2">📂</p>
+                <p className="text-sm font-medium text-slate-600">Drop file here</p>
+                <p className="text-xs text-slate-400 mt-1">or click to browse</p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                />
+              </div>
+              {status === "loading" && (
+                <p className="text-sm text-slate-400 text-center animate-pulse">Extracting and analysing…</p>
+              )}
+            </div>
+          )}
+
+          {/* Error */}
+          {status === "error" && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+              {message}
+            </div>
+          )}
+
+          {/* Result */}
+          {status === "done" && result && (
+            <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
+              <p className="text-sm font-semibold text-slate-800 leading-snug">{result.title}</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{result.excerpt}</p>
+              {result.result && (
+                <div className="flex flex-wrap gap-2 mt-1 items-center">
+                  <span className="text-xs font-mono font-bold text-slate-700">
+                    {(result.result.relevance * 100).toFixed(0)}%
+                  </span>
+                  {result.result.tier && (
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${TIER_COLOR[result.result.tier] ?? ""}`}>
+                      T{result.result.tier}
+                    </span>
+                  )}
+                  {result.result.impact_type && (
+                    <span className="text-[11px] bg-violet-50 border border-violet-200 text-violet-700 px-2 py-0.5 rounded">
+                      {result.result.impact_type}
+                    </span>
+                  )}
+                  {result.result.persisted ? (
+                    <span className="ml-auto text-xs text-emerald-600 font-semibold">✓ Added to signals</span>
+                  ) : (
+                    <span className="ml-auto text-xs text-slate-400">Below threshold — not saved</span>
+                  )}
+                </div>
+              )}
+              {result.result?.what_changed && (
+                <p className="text-xs text-slate-600 italic">{result.result.what_changed}</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const HOUR_OPTIONS = [
@@ -536,6 +733,7 @@ export default function SignalsPage() {
   const [filterDecision, setFilterDecision] = useState<string | null>(null);
   const [overrides,      setOverrides]      = useState<Record<string, number>>({});
   const [expandedRows,   setExpandedRows]   = useState<Set<string>>(new Set());
+  const [showAddModal,   setShowAddModal]   = useState(false);
 
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -546,7 +744,7 @@ export default function SignalsPage() {
   }
 
   const url = `${API}/api/signals?hours=${hours}&limit=500`;
-  const { data: rawSignals, isLoading, error } = useSWR(url, fetcher, { refreshInterval: 30_000 });
+  const { data: rawSignals, isLoading, error, mutate } = useSWR(url, fetcher, { refreshInterval: 30_000 });
 
   const signals: any[] = useMemo(() =>
     (rawSignals ?? []).map((s: any) => ({
@@ -637,8 +835,21 @@ export default function SignalsPage() {
           </p>
         </div>
 
-        {/* View toggle */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold
+              hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M6 1a.75.75 0 0 1 .75.75v3.5h3.5a.75.75 0 0 1 0 1.5h-3.5v3.5a.75.75 0 0 1-1.5 0v-3.5H1.75a.75.75 0 0 1 0-1.5h3.5v-3.5A.75.75 0 0 1 6 1z"/>
+            </svg>
+            Add Signal
+          </button>
+
+          {/* View toggle */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
           <button
             onClick={() => setIsFull(false)}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
@@ -654,6 +865,7 @@ export default function SignalsPage() {
             Full
           </button>
         </div>
+        </div>{/* end actions */}
       </div>
 
       {/* ── Filter bar ─────────────────────────────────────────────────── */}
@@ -826,6 +1038,13 @@ export default function SignalsPage() {
           <span>· sorted by {COLUMNS.find((c) => c.key === sort.col)?.label} {sort.dir}</span>
         )}
       </div>
+
+      {showAddModal && (
+        <AddSignalModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={() => { void mutate(); }}
+        />
+      )}
     </div>
   );
 }

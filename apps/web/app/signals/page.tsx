@@ -202,7 +202,7 @@ function AssessCell({ signal, onSaved }: { signal: any; onSaved: (id: string, sc
   if (!open) {
     return (
       <button
-        onClick={() => { setDraft(seed); setOpen(true); }}
+        onClick={(e) => { e.stopPropagation(); setDraft(seed); setOpen(true); }}
         className="text-xs text-slate-400 hover:text-slate-700 hover:underline transition-colors whitespace-nowrap"
       >
         {signal.analyst_score != null ? "Change" : "Set score"}
@@ -210,7 +210,7 @@ function AssessCell({ signal, onSaved }: { signal: any; onSaved: (id: string, sc
     );
   }
   return (
-    <div className="flex flex-col gap-1.5 min-w-[140px]">
+    <div className="flex flex-col gap-1.5 min-w-[140px]" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center gap-2">
         <input type="range" min={0} max={1} step={0.01} value={draft}
           onChange={(e) => setDraft(parseFloat(e.target.value))}
@@ -317,10 +317,11 @@ function sortSignals(signals: any[], sort: SortState | null): any[] {
 
 // ── Cell renderer ─────────────────────────────────────────────────────────────
 
-function CellContent({ colKey, signal, onScoreSaved }: {
+function CellContent({ colKey, signal, onScoreSaved, expanded }: {
   colKey: string;
   signal: any;
   onScoreSaved: (id: string, score: number) => void;
+  expanded: boolean;
 }) {
   const src = SOURCE_META[signal.source] ?? { icon: "📌", label: signal.source, color: "bg-slate-50 text-slate-500 border-slate-200" };
 
@@ -335,7 +336,7 @@ function CellContent({ colKey, signal, onScoreSaved }: {
     case "description":
       return (
         <div className="flex flex-col gap-1">
-          <div className="text-sm text-slate-800 leading-snug line-clamp-2">
+          <div className={`text-sm text-slate-800 leading-snug ${expanded ? "" : "line-clamp-2"}`}>
             {signal.description || <span className="text-slate-400 italic">No description</span>}
           </div>
           {signal.price_move && (
@@ -343,6 +344,7 @@ function CellContent({ colKey, signal, onScoreSaved }: {
           )}
           {signal.url && (
             <a href={signal.url} target="_blank" rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
               ↗ source
             </a>
@@ -369,12 +371,12 @@ function CellContent({ colKey, signal, onScoreSaved }: {
 
     case "what_changed":
       return signal.what_changed ? (
-        <span className="text-xs text-slate-700 leading-snug line-clamp-3">{signal.what_changed}</span>
+        <span className={`text-xs text-slate-700 leading-snug ${expanded ? "" : "line-clamp-3"}`}>{signal.what_changed}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "mechanism":
       return signal.mechanism ? (
-        <span className="text-xs text-slate-600 leading-snug line-clamp-3 italic">{signal.mechanism}</span>
+        <span className={`text-xs text-slate-600 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.mechanism}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "llm_score": {
@@ -397,7 +399,7 @@ function CellContent({ colKey, signal, onScoreSaved }: {
 
     case "scorer_reasoning":
       return signal.scorer_reasoning ? (
-        <span className="text-[10px] text-slate-500 leading-snug line-clamp-3 italic">{signal.scorer_reasoning}</span>
+        <span className={`text-[10px] text-slate-500 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.scorer_reasoning}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "graph_entities":
@@ -408,7 +410,7 @@ function CellContent({ colKey, signal, onScoreSaved }: {
 
     case "triage_reasoning":
       return signal.triage_reasoning ? (
-        <span className="text-[10px] text-slate-500 leading-snug line-clamp-3 italic">{signal.triage_reasoning}</span>
+        <span className={`text-[10px] text-slate-500 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.triage_reasoning}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "event_class": {
@@ -431,7 +433,7 @@ function CellContent({ colKey, signal, onScoreSaved }: {
 
     case "state_what":
       return signal.state_change?.what ? (
-        <span className="text-xs text-slate-700 leading-snug line-clamp-2">{signal.state_change.what}</span>
+        <span className={`text-xs text-slate-700 leading-snug ${expanded ? "" : "line-clamp-2"}`}>{signal.state_change.what}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "state_direction":
@@ -533,6 +535,15 @@ export default function SignalsPage() {
   const [filterClass,    setFilterClass]    = useState<string | null>(null);
   const [filterDecision, setFilterDecision] = useState<string | null>(null);
   const [overrides,      setOverrides]      = useState<Record<string, number>>({});
+  const [expandedRows,   setExpandedRows]   = useState<Set<string>>(new Set());
+
+  function toggleRow(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   const url = `${API}/api/signals?hours=${hours}&limit=500`;
   const { data: rawSignals, isLoading, error } = useSWR(url, fetcher, { refreshInterval: 30_000 });
@@ -780,9 +791,13 @@ export default function SignalsPage() {
                 </td>
               </tr>
             )}
-            {visible.map((signal: any) => (
+            {visible.map((signal: any) => {
+              const isExpanded = expandedRows.has(signal.id);
+              return (
               <tr key={signal.id}
-                className="group hover:bg-slate-50/70 transition-colors border-b border-slate-100 last:border-0">
+                onClick={() => toggleRow(signal.id)}
+                className={`group border-b border-slate-100 last:border-0 cursor-pointer transition-colors
+                  ${isExpanded ? "bg-slate-50" : "hover:bg-slate-50/70"}`}>
                 {activeCols.map((col) => (
                   <td
                     key={col.key}
@@ -790,15 +805,13 @@ export default function SignalsPage() {
                       ${col.key === "source"  ? "pl-4" : ""}
                       ${col.key === "assess"  ? "pr-4 opacity-0 group-hover:opacity-100 transition-opacity" : ""}
                       ${col.section === "scorer" && isFull ? "bg-violet-50/20 border-l border-l-violet-100 first:border-l-0" : ""}
-                      ${col.section === "triage"  && isFull ? "bg-teal-50/20  border-l border-l-teal-100  first:border-l-0" : ""}
-                      ${col.key === "source" && col.section !== "scorer" && col.section !== "triage" && isFull
-                        ? "" : ""}`}
+                      ${col.section === "triage"  && isFull ? "bg-teal-50/20  border-l border-l-teal-100  first:border-l-0" : ""}`}
                   >
-                    <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} />
+                    <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
                   </td>
                 ))}
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>

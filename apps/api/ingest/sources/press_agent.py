@@ -27,14 +27,29 @@ logger = logging.getLogger(__name__)
 FEEDS_YML = Path(__file__).resolve().parent / "press_feeds.yml"
 
 POWER_KEYWORDS = [
-    "transformer", "goes", "grain-oriented", "electrical steel",
-    "power grid", "transmission", "substation", "switchgear",
-    "copper", "aluminum", "busan", "shipping", "heavy lift",
-    "datacenter", "data center", "hyperscaler", "grid modernization",
-    "ira", "repower", "siemens energy", "hitachi energy", "ge vernova",
+    # ── Transformer / T&D ────────────────────────────────────────────────────
+    "transformer", "goes", "grain-oriented", "electrical steel", "silicon steel",
+    "core steel", "transformer steel", "non-grain", "oltc", "tap changer",
+    "power grid", "transmission", "substation", "switchgear", "bushing",
+    # ── Materials ────────────────────────────────────────────────────────────
+    "copper", "aluminum", "aluminium", "scrap", "iron ore", "coking coal",
+    "pig iron", "billet", "slab", "hot-rolled", "cold-rolled",
+    # ── OEM / supply chain actors ────────────────────────────────────────────
+    "siemens energy", "hitachi energy", "ge vernova",
     "hyundai electric", "hyosung", "mitsubishi electric", "weg",
-    "backlog", "lead time", "supply chain", "posco", "nippon steel",
-    "cleveland-cliffs", "jfe steel",
+    "posco", "nippon steel", "cleveland-cliffs", "jfe steel",
+    "baosteel", "wuhan iron", "novolipetsk", "nlmk",
+    # ── Trade policy & regulatory ────────────────────────────────────────────
+    "anti-dumping", "countervailing", "cbam", "carbon border",
+    "section 232", "section 201", "safeguard", "tariff", "trade defense",
+    "trade remedy", "dumping margin", "eurofer", "eurometal",
+    # ── Grid demand / infrastructure ─────────────────────────────────────────
+    "datacenter", "data center", "hyperscaler", "grid modernization",
+    "energy transition", "green steel", "decarbonization",
+    "ira", "repower", "backlog", "lead time", "supply chain",
+    # ── Logistics ────────────────────────────────────────────────────────────
+    "shipping", "heavy lift", "freight", "port congestion",
+    "baltic dry", "container rate",
 ]
 
 

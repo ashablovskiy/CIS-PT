@@ -4,17 +4,33 @@
 #
 # Add/remove feeds here without touching Python code.
 # Format: name, url, tags (for rule-based pre-filter boosting)
-# Last audited: 2026-05-29
+# Last audited: 2026-06-06
 #
-# Audit notes (v2):
-#   - REMOVED oilprice_energy : oil-trading focus, mostly noise for transformers
-#   - REMOVED electrek        : EV/consumer-solar focus, low signal-to-noise on grid
-#   - ADDED   datacenter_dynamics : strongest dedicated data-center build/power source
-#   Kept set covers four lanes: grid/T&D industry, US utility+regulatory,
-#   raw-material supply, and the data-center demand wave.
+# Feed strategy:
+#   Direct RSS   — used where a reliable public feed exists.
+#   Google News  — used for paywalled premium sources (Fastmarkets, Platts,
+#                  Argus, etc.). Google indexes their headlines and serves them
+#                  via public RSS; we get title + snippet + link without a
+#                  subscription. Railway's IP works reliably.
+#                  Query format: https://news.google.com/rss/search?q=QUERY
+#
+# Source lanes covered:
+#   Grid / T&D (existing)      — TD World, POWER, PowerGrid, Utility Dive
+#   Steel commodity intelligence — Fastmarkets, Platts, Argus, Kallanish,
+#                                  MEPS, EUROMETAL, EUROFER, Mysteel (own agent)
+#   EU / trade policy           — EUROMETAL, EUROFER, Kallanish
+#   Grid / regulatory (new)     — RTO Insider, Energy Central, Power Engineering
+#   Raw materials               — Mining.com, Fastmarkets, Argus
+#   Data-center demand          — DC Dynamics, DC Knowledge, SemiAnalysis
+
+_google: &google https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en
 
 feeds:
-  # ── Grid / T&D / power industry ────────────────────────────────────────────
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # GRID / T&D / POWER INDUSTRY  (direct RSS)
+  # ════════════════════════════════════════════════════════════════════════════
+
   - name: td_world
     url: https://www.tdworld.com/rss.xml
     tags: [transformers, grid, utility, t_and_d]
@@ -27,17 +43,85 @@ feeds:
     url: https://www.powergrid.com/feed/
     tags: [power, grid, transformer, utility]
 
-  # ── US utility + regulatory / policy ───────────────────────────────────────
   - name: utility_dive
     url: https://www.utilitydive.com/feeds/news/
     tags: [grid, utility, energy, regulatory]
 
-  # ── Raw materials (copper / steel supply news) ─────────────────────────────
+  # RTO Insider — US organized electricity market news (PJM, MISO, CAISO etc.)
+  - name: rto_insider
+    url: https://www.rtoinsider.com/feed/rss/
+    tags: [grid, utility, rto, iso, power_market, regulatory]
+
+  # Power Engineering International — global T&D and generation engineering
+  - name: power_engineering_intl
+    url: https://news.google.com/rss/search?q=%22power+engineering%22+%22power+grid%22+OR+transformer+OR+substation+OR+%22high+voltage%22&hl=en-US&gl=US&ceid=US:en
+    tags: [power, grid, transformer, t_and_d, engineering]
+
+  # Energy Central — utility industry community with expert analysis
+  - name: energy_central
+    url: https://news.google.com/rss/search?q=energycentral+grid+OR+transformer+OR+utility+OR+%22power+market%22&hl=en-US&gl=US&ceid=US:en
+    tags: [grid, utility, energy, regulatory, power_market]
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # STEEL & COMMODITY INTELLIGENCE  (Google News — paywalled sources)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Fastmarkets (formerly Metal Bulletin) — industry-benchmark steel & raw material pricing
+  # Covers: GOES/electrical steel, scrap, iron ore, coking coal, copper, aluminium
+  - name: fastmarkets
+    url: https://news.google.com/rss/search?q=fastmarkets+%28steel+OR+%22electrical+steel%22+OR+%22iron+ore%22+OR+scrap+OR+copper+OR+alumin%29&hl=en-US&gl=US&ceid=US:en
+    tags: [steel, electrical_steel, iron_ore, scrap, copper, commodity_price, goes]
+
+  # S&P Global Commodity Insights (Platts) — macro steel/energy/infrastructure pricing
+  # Especially useful for energy-steel linkage and EPC/data center power themes
+  - name: spglobal_platts
+    url: https://news.google.com/rss/search?q=%22S%26P+Global+Commodity+Insights%22+OR+%22platts%22+%28steel+OR+%22power+grid%22+OR+%22iron+ore%22+OR+energy+OR+transformer%29&hl=en-US&gl=US&ceid=US:en
+    tags: [steel, energy, iron_ore, commodity_price, power, infrastructure]
+
+  # Argus Media — steel, scrap, iron ore, coking coal, freight + China reporting
+  - name: argus_media
+    url: https://news.google.com/rss/search?q=%22argus+media%22+%28steel+OR+scrap+OR+%22iron+ore%22+OR+%22coking+coal%22+OR+freight%29&hl=en-US&gl=US&ceid=US:en
+    tags: [steel, scrap, iron_ore, coking_coal, freight, commodity_price]
+
+  # Kallanish — European steel, green steel, M&A, project announcements
+  - name: kallanish
+    url: https://news.google.com/rss/search?q=kallanish+%28steel+OR+%22green+steel%22+OR+%22electrical+steel%22+OR+scrap%29&hl=en-US&gl=US&ceid=US:en
+    tags: [steel, green_steel, european_steel, scrap, ma]
+
+  # MEPS International — steel price forecasts, global and regional market outlooks
+  - name: meps_international
+    url: https://news.google.com/rss/search?q=%22MEPS%22+steel+%28price+OR+forecast+OR+market%29&hl=en-US&gl=US&ceid=US:en
+    tags: [steel, price_forecast, market_outlook, global_steel]
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # EU / TRADE POLICY  (Google News — association websites)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # EUROMETAL — European steel distribution, trade policy, CBAM, service centers
+  - name: eurometal
+    url: https://news.google.com/rss/search?q=EUROMETAL+%28steel+OR+CBAM+OR+trade+OR+distribution+OR+tariff%29&hl=en-US&gl=US&ceid=US:en
+    tags: [european_steel, trade_policy, cbam, distribution, tariff]
+
+  # EUROFER — EU regulatory, trade defense measures, CBAM, carbon border adjustment
+  - name: eurofer
+    url: https://news.google.com/rss/search?q=EUROFER+%28steel+OR+CBAM+OR+%22carbon+border%22+OR+%22trade+defense%22+OR+%22anti-dumping%22%29&hl=en-US&gl=US&ceid=US:en
+    tags: [european_steel, cbam, trade_defense, anti_dumping, regulatory]
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # RAW MATERIALS  (direct RSS — open access)
+  # ════════════════════════════════════════════════════════════════════════════
+
   - name: mining_dot_com
     url: https://www.mining.com/feed/
     tags: [copper, steel, goes, mining, commodities]
 
-  # ── Data-center demand wave ────────────────────────────────────────────────
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DATA-CENTER / AI DEMAND WAVE  (direct RSS)
+  # ════════════════════════════════════════════════════════════════════════════
+
   - name: datacenter_dynamics
     url: https://www.datacenterdynamics.com/en/rss/
     tags: [datacenter, hyperscaler, power, demand]

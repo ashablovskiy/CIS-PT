@@ -26,10 +26,31 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _unavailable_state(hours: int, reason: str) -> dict:
+    """Return a structured empty state so the frontend can display a clear message."""
+    return {
+        "unavailable": True,
+        "reason": reason,
+        "window_hours": hours,
+        "health_index": 0.0,
+        "health_label": "unavailable",
+        "top_actors": [],
+        "hotspots": [],
+        "bottlenecks": [],
+        "node_count": 0,
+        "edge_count": 0,
+        "pressured_actor_count": 0,
+    }
+
+
 @router.get("/state")
 async def get_state(hours: int = Q(default=720, ge=1, le=2160)) -> dict:
     """Current full network-state object."""
-    return await compute_network_state(window_hours=hours, top_n=12)
+    try:
+        return await compute_network_state(window_hours=hours, top_n=12)
+    except Exception as exc:
+        logger.error("[network/state] %s", exc)
+        return _unavailable_state(hours, str(exc))
 
 
 @router.get("/actors")

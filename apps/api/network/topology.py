@@ -49,12 +49,17 @@ async def _fetch_nodes_edges() -> tuple[list[dict], list[dict]]:
 
 
 async def load_graph(force: bool = False) -> nx.DiGraph:
-    """Return the weighted dependency DiGraph (cached)."""
+    """Return the weighted dependency DiGraph (cached).
+    Returns an empty graph when Neo4j is unavailable so callers degrade gracefully."""
     global _CACHE
     if _CACHE is not None and not force:
         return _CACHE
 
-    nodes, edges = await _fetch_nodes_edges()
+    try:
+        nodes, edges = await _fetch_nodes_edges()
+    except Exception as exc:
+        logger.warning("[topology] Neo4j unavailable — returning empty graph: %s", exc)
+        return nx.DiGraph()
     g = nx.DiGraph()
 
     for n in nodes:

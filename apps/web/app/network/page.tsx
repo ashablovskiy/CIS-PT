@@ -4,7 +4,11 @@ import { useState } from "react";
 import useSWR from "swr";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+};
 
 // ── Health gauge ────────────────────────────────────────────────────────────
 
@@ -177,13 +181,38 @@ function Metric({ label, value }: { label: string; value: number | null }) {
 
 export default function NetworkPage() {
   const [actor, setActor] = useState<string | null>(null);
-  const { data: state, isLoading } = useSWR(`${API}/api/network/state?hours=720`, fetcher, {
+  const { data: state, isLoading, error } = useSWR(`${API}/api/network/state?hours=720`, fetcher, {
     refreshInterval: 60_000,
   });
   const { data: health } = useSWR(`${API}/api/network/health?limit=60`, fetcher);
 
-  if (isLoading || !state) {
+  if (isLoading) {
     return <div className="p-8 text-slate-400 animate-pulse">Computing network state…</div>;
+  }
+
+  if (error || !state) {
+    return (
+      <div className="p-8 flex flex-col gap-2">
+        <p className="text-red-500 font-medium text-sm">Network state unavailable</p>
+        <p className="text-slate-400 text-xs max-w-md">
+          {error?.message ?? "The graph engine could not connect. Check that Neo4j is running and NEO4J_URI is set correctly in Railway."}
+        </p>
+      </div>
+    );
+  }
+
+  if (state.unavailable) {
+    return (
+      <div className="p-8 flex flex-col gap-2">
+        <p className="text-amber-600 font-medium text-sm">Network graph unavailable</p>
+        <p className="text-slate-400 text-xs max-w-md">
+          {state.reason ?? "Neo4j is not reachable. The graph engine needs a running Neo4j instance to compute actor influence and pressure propagation."}
+        </p>
+        <p className="text-slate-400 text-xs mt-1">
+          Check: NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD in Railway variables.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -314,14 +343,22 @@ const CRIT_COLOR: Record<string, string> = {
 
 function AntActorSection() {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const { data: antState, isLoading } = useSWR(
+  const { data: antState, isLoading, error: antError } = useSWR(
     `${API}/api/network/ant/state?hours=720`, fetcher, { refreshInterval: 120_000 }
   );
 
-  if (isLoading || !antState) {
+  if (isLoading) {
     return (
       <div className="mt-10">
         <div className="text-xs text-slate-400 animate-pulse">Computing ANT actor state…</div>
+      </div>
+    );
+  }
+
+  if (antError || !antState) {
+    return (
+      <div className="mt-10 text-xs text-slate-400">
+        ANT actor state unavailable — {antError?.message ?? "check API connection"}
       </div>
     );
   }

@@ -17,12 +17,20 @@ _driver: AsyncDriver | None = None
 async def get_driver() -> AsyncDriver:
     global _driver
     if _driver is None:
-        _driver = AsyncGraphDatabase.driver(
+        drv = AsyncGraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_username, settings.neo4j_password),
+            connection_timeout=10.0,   # don't hang indefinitely on cold start
+            max_connection_lifetime=300,
         )
-        await _driver.verify_connectivity()
-        logger.info("Neo4j driver connected to %s", settings.neo4j_uri)
+        try:
+            await drv.verify_connectivity()
+            logger.info("Neo4j driver connected to %s", settings.neo4j_uri)
+            _driver = drv
+        except Exception as exc:
+            # Reset so the next request tries a fresh connection
+            await drv.close()
+            raise RuntimeError(f"Neo4j unavailable ({settings.neo4j_uri}): {exc}") from exc
     return _driver
 
 

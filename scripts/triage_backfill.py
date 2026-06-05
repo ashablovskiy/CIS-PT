@@ -131,23 +131,44 @@ async def main(args: argparse.Namespace) -> None:
     sem = asyncio.Semaphore(args.concurrency)
     tasks = [classify_one(sid, payload, sem) for sid, payload in signals]
 
+    # Collect all classification results first (no DB during LLM calls)
+    results: list[tuple[uuid.UUID, dict | None, str]] = []
+    done = 0
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        results.append(result)
+        done += 1
+        if done % 20 == 0 or done == len(signals):
+            passed = sum(1 for _, t, _ in results if t is not None)
+            logger.info("[LLM %d/%d] passed=%d", done, len(signals), passed)
+
+    # Persist in a single session with per-row retry on DB hiccup
     ok = skipped = errors = 0
     async with async_session_factory() as session:
-        for coro in asyncio.as_completed(tasks):
-            signal_id, triage, status = await coro
-            if triage is not None:
-                await persist_classification(session, signal_id, triage)
-                await session.commit()
-                ok += 1
-            elif status.startswith("skipped"):
-                skipped += 1
-            else:
-                errors += 1
-            total = ok + skipped + errors
-            if total % 10 == 0 or total == len(signals):
+        for signal_id, triage, status in results:
+            if triage is None:
+                if status.startswith("skipped"):
+                    skipped += 1
+                else:
+                    errors += 1
+                continue
+            for attempt in range(3):
+                try:
+                    await persist_classification(session, signal_id, triage)
+                    await session.commit()
+                    ok += 1
+                    break
+                except Exception as exc:
+                    await session.rollback()
+                    if attempt == 2:
+                        logger.warning("persist failed after 3 attempts %s: %s", signal_id, exc)
+                        errors += 1
+                    else:
+                        await asyncio.sleep(2 ** attempt)
+            if (ok + skipped + errors) % 20 == 0 or (ok + skipped + errors) == len(signals):
                 logger.info(
-                    "[%d/%d] classified=%d  skipped=%d  errors=%d",
-                    total, len(signals), ok, skipped, errors,
+                    "[DB %d/%d] classified=%d  skipped=%d  errors=%d",
+                    ok + skipped + errors, len(signals), ok, skipped, errors,
                 )
 
     logger.info("Done — classified=%d  skipped=%d  errors=%d", ok, skipped, errors)

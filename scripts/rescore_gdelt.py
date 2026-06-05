@@ -100,8 +100,9 @@ async def _score_batch_direct(items_payload: list[dict]) -> list[dict]:
     import anthropic
 
     from apps.api.prompts.registry import registry as _prompt_registry
+    from apps.api.settings import settings
 
-    client = anthropic.AsyncAnthropic()
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     descriptions = []
     for idx, payload in enumerate(items_payload, 1):

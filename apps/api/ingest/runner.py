@@ -353,19 +353,31 @@ class BaseIngestionAgent(ABC):
         # which prevents multiple news sources covering the same event from each
         # contributing full pressure to ANT nodes.
         cluster_embeddings: list[list[float] | None] = [None] * len(items)
-        try:
-            from apps.api.assess.embeddings import embed_texts
-            from apps.api.network.event_cluster import payload_to_cluster_text
-            texts = [payload_to_cluster_text(s.item.raw_payload) for s in items]
-            vecs = await embed_texts(texts)
-            for i, v in enumerate(vecs):
-                cluster_embeddings[i] = v
-        except Exception as exc:
-            logger.warning(
-                "[%s] Event-clustering embedding failed (%s) — "
-                "signals will be stored without event_id assignment.",
-                self.agent_name, exc,
-            )
+        # Retry embedding up to 2 times — a transient Voyage failure leaves
+        # event_id=NULL which causes ANT Layer 2 to double-count duplicate events.
+        for _attempt in range(2):
+            try:
+                from apps.api.assess.embeddings import embed_texts
+                from apps.api.network.event_cluster import payload_to_cluster_text
+                texts = [payload_to_cluster_text(s.item.raw_payload) for s in items]
+                vecs = await embed_texts(texts)
+                for i, v in enumerate(vecs):
+                    cluster_embeddings[i] = v
+                break   # success
+            except Exception as exc:
+                if _attempt == 0:
+                    logger.warning(
+                        "[%s] Embedding attempt 1 failed (%s) — retrying…",
+                        self.agent_name, exc,
+                    )
+                    await asyncio.sleep(3)
+                else:
+                    logger.warning(
+                        "[%s] Embedding failed after 2 attempts (%s) — "
+                        "signals stored without event_id. Run recluster_events.py "
+                        "to backfill embeddings and fix ANT dedup.",
+                        self.agent_name, exc,
+                    )
 
         async with self._session_factory() as session:
             async with session.begin():

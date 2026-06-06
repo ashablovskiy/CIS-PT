@@ -267,7 +267,7 @@ const COLUMNS: ColDef[] = [
   // II. SCORER
   { key: "impact_tier",      label: "Tier",         section: "scorer", essential: true,  width: "w-[56px]",
     sortValue: (s) => s.impact_tier ?? 99 },
-  { key: "what_changed",     label: "What Changed", section: "scorer", essential: true,  width: "min-w-[160px] max-w-[240px]" },
+  { key: "what_changed",     label: "What Changed", section: "scorer", essential: false, width: "min-w-[160px] max-w-[240px]" },
   { key: "mechanism",        label: "Mechanism",    section: "scorer", essential: true,  width: "min-w-[180px] max-w-[260px]" },
   { key: "llm_score",        label: "Relevance",    section: "scorer", essential: false, width: "w-[80px]",
     sortValue: (s) => s.llm_score ?? 0 },
@@ -391,24 +391,66 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
       );
     }
 
-    case "description":
+    case "description": {
+      // Synthesised event meaning: prefer what_changed (LLM-generated at ingest,
+      // already captures "Anthropic disclosed $1.25B monthly compute deal" rather
+      // than "Anthropic nears profit, pays SpaceX $1.25B monthly — TechCrunch").
+      // For multi-source events the representative signal's what_changed naturally
+      // synthesises the event — no extra LLM call needed.
+      const eventTitle = signal.what_changed || signal.description;
+
+      // Show the raw article title(s) as subdued sub-text so analysts can
+      // still read the original headline. Strip trailing " — Source" suffixes
+      // (e.g. "... - Construction Dive", "... | Reuters").
+      const rawTitle = (signal.description || "")
+        .replace(/\s*[-–|]\s*[A-Z][^-–|]{2,40}$/, "")   // "… - Reuters", "… | Bloomberg"
+        .trim();
+      const showRaw = rawTitle && rawTitle !== eventTitle && rawTitle.length > 10;
+
       return (
         <div className="flex flex-col gap-1">
-          <div className={`text-sm text-slate-800 leading-snug ${expanded ? "" : "line-clamp-2"}`}>
-            {signal.description || <span className="text-slate-400 italic">No description</span>}
+          {/* Primary: synthesised event meaning */}
+          <div className={`text-sm font-medium text-slate-800 leading-snug ${expanded ? "" : "line-clamp-2"}`}>
+            {eventTitle || <span className="text-slate-400 italic">No description</span>}
           </div>
+          {/* Secondary: cleaned raw headline for reference */}
+          {showRaw && (
+            <div className={`text-[11px] text-slate-400 leading-snug italic ${expanded ? "" : "line-clamp-1"}`}>
+              {rawTitle}
+            </div>
+          )}
           {signal.price_move && (
             <span className="text-xs text-slate-500 font-mono">{signal.price_move}</span>
           )}
-          {signal.url && (
-            <a href={signal.url} target="_blank" rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
-              ↗ source
-            </a>
+          {/* For multi-source events show source links inline */}
+          {signal._sourceCount > 1 ? (
+            <div className="flex flex-col gap-0.5 mt-0.5">
+              {(signal._members ?? []).slice(0, expanded ? undefined : 2).map((m: any, i: number) => (
+                m.url ? (
+                  <a key={i} href={m.url} target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors truncate"
+                    title={m.description}>
+                    ↗ {(SOURCE_META[m.source]?.label ?? m.source)}
+                  </a>
+                ) : null
+              ))}
+              {!expanded && (signal._members ?? []).length > 2 && (
+                <span className="text-[10px] text-slate-300">+{signal._members.length - 2} more</span>
+              )}
+            </div>
+          ) : (
+            signal.url && (
+              <a href={signal.url} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
+                ↗ source
+              </a>
+            )
           )}
         </div>
       );
+    }
 
     case "occurred_at":
       return signal.occurred_at ? (

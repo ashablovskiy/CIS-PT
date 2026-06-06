@@ -236,8 +236,7 @@ class MysteelAgent(BaseIngestionAgent):
                     occurred_at=published_at,
                     raw_payload={
                         "title":   title,
-                        "summary": body[:400],
-                        "body":    body,
+                        "summary": body[:500],   # keep payload lean — body alone was hitting token limits
                         "source_name": "Mysteel",
                         "domain":  "mysteel.net",
                     },

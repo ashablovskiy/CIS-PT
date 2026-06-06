@@ -733,10 +733,12 @@ export default function SignalsPage() {
   const [hours,          setHours]          = useState(48);
   const [isFull,         setIsFull]         = useState(false);
   const [sort,           setSort]           = useState<SortState | null>({ col: "occurred_at", dir: "desc" });
-  const [filterSource,   setFilterSource]   = useState<string | null>(null);
-  const [filterTiers,    setFilterTiers]    = useState<Set<number>>(new Set());
-  const [filterClass,    setFilterClass]    = useState<string | null>(null);
-  const [filterDecision, setFilterDecision] = useState<string | null>(null);
+  const [filterSource,     setFilterSource]     = useState<string | null>(null);
+  const [filterTiers,      setFilterTiers]      = useState<Set<number>>(new Set());
+  const [filterClass,      setFilterClass]      = useState<string | null>(null);
+  const [filterDecision,   setFilterDecision]   = useState<string | null>(null);
+  const [filterImpactType, setFilterImpactType] = useState<string | null>(null);
+  const [searchText,       setSearchText]       = useState("");
   const [overrides,      setOverrides]      = useState<Record<string, number>>({});
   const [expandedRows,   setExpandedRows]   = useState<Set<string>>(new Set());
   const [showAddModal,   setShowAddModal]   = useState(false);
@@ -762,13 +764,24 @@ export default function SignalsPage() {
 
   // ── Filter ────────────────────────────────────────────────────────────────
 
+  const needle = searchText.trim().toLowerCase();
+
   const filtered = useMemo(() => signals.filter((s) => {
-    if (filterSource   && s.source !== filterSource)               return false;
-    if (filterTiers.size > 0 && !filterTiers.has(s.impact_tier))  return false;
-    if (filterClass    && s.event_class !== filterClass)           return false;
-    if (filterDecision && s.decision !== filterDecision)           return false;
+    if (filterSource     && s.source !== filterSource)               return false;
+    if (filterTiers.size > 0 && !filterTiers.has(s.impact_tier))    return false;
+    if (filterClass      && s.event_class !== filterClass)           return false;
+    if (filterDecision   && s.decision !== filterDecision)           return false;
+    if (filterImpactType && s.impact_type !== filterImpactType)      return false;
+    if (needle) {
+      const hay = [
+        s.description, s.what_changed, s.mechanism,
+        s.scorer_reasoning, s.triage_reasoning, s.url,
+        s.impact_type, s.source,
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
     return true;
-  }), [signals, filterSource, filterTiers, filterClass, filterDecision]);
+  }), [signals, filterSource, filterTiers, filterClass, filterDecision, filterImpactType, needle]);
 
   // ── Sort ──────────────────────────────────────────────────────────────────
 
@@ -799,6 +812,11 @@ export default function SignalsPage() {
   const tierCounts = useMemo(() =>
     signals.reduce((a: Record<number, number>, s: any) => {
       if (s.impact_tier) a[s.impact_tier] = (a[s.impact_tier] || 0) + 1; return a;
+    }, {}), [signals]);
+
+  const impactTypeCounts = useMemo(() =>
+    signals.reduce((a: Record<string, number>, s: any) => {
+      if (s.impact_type) a[s.impact_type] = (a[s.impact_type] || 0) + 1; return a;
     }, {}), [signals]);
 
   const handleScoreSaved = useCallback(
@@ -877,6 +895,38 @@ export default function SignalsPage() {
       {/* ── Filter bar ─────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 mb-4">
 
+        {/* Row 0: Search */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12 shrink-0">Search</span>
+          <div className="relative flex-1 max-w-sm">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M6.5 1a5.5 5.5 0 1 0 3.89 9.453l3.329 3.329a.75.75 0 1 0 1.06-1.06l-3.328-3.33A5.5 5.5 0 0 0 6.5 1zm-4 5.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/>
+            </svg>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Filter by description, mechanism, reasoning, URL…"
+              className="w-full pl-8 pr-8 py-1.5 text-xs rounded-lg border border-slate-200
+                bg-white placeholder-slate-400 text-slate-700
+                focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400
+                transition-colors"
+            />
+            {searchText && (
+              <button
+                onClick={() => setSearchText("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                aria-label="Clear search"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M1.72 1.72a.75.75 0 0 1 1.06 0L6 4.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L7.06 6l3.22 3.22a.75.75 0 1 1-1.06 1.06L6 7.06 2.78 10.28a.75.75 0 0 1-1.06-1.06L4.94 6 1.72 2.78a.75.75 0 0 1 0-1.06z"/>
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Row 1: Source + time window */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12">Source</span>
@@ -943,6 +993,24 @@ export default function SignalsPage() {
                 />
               );
             })}
+          </div>
+        )}
+
+        {/* Row 4: Impact type (only show types that have signals) */}
+        {Object.keys(impactTypeCounts).length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12 shrink-0">Impact</span>
+            <FilterPill label="All" active={!filterImpactType} onClick={() => setFilterImpactType(null)} />
+            {Object.entries(impactTypeCounts)
+              .sort((a, b) => (b[1] as number) - (a[1] as number))
+              .map(([type, cnt]) => (
+                <FilterPill key={type}
+                  label={type}
+                  count={cnt as number}
+                  active={filterImpactType === type}
+                  onClick={() => setFilterImpactType(filterImpactType === type ? null : type)}
+                />
+              ))}
           </div>
         )}
       </div>
@@ -1035,13 +1103,30 @@ export default function SignalsPage() {
       </div>
 
       {/* Footer */}
-      <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
+      <div className="mt-2 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
         <span>{visible.length} signals shown</span>
         {signals.length !== visible.length && (
           <span>· {signals.length - visible.length} hidden by filters</span>
         )}
         {sort && (
           <span>· sorted by {COLUMNS.find((c) => c.key === sort.col)?.label} {sort.dir}</span>
+        )}
+        {/* Active filter chips */}
+        {(filterSource || filterTiers.size > 0 || filterClass || filterImpactType || searchText) && (
+          <span className="ml-auto flex items-center gap-1.5">
+            <span className="text-slate-300">|</span>
+            {filterSource     && <span className="px-2 py-0.5 bg-slate-100 rounded-full">{filterSource}</span>}
+            {[...filterTiers].map(t => <span key={t} className="px-2 py-0.5 bg-slate-100 rounded-full">T{t}</span>)}
+            {filterClass      && <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full">{filterClass}</span>}
+            {filterImpactType && <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded-full">{filterImpactType}</span>}
+            {searchText       && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">"{searchText}"</span>}
+            <button
+              onClick={() => { setFilterSource(null); setFilterTiers(new Set()); setFilterClass(null); setFilterImpactType(null); setSearchText(""); }}
+              className="px-2 py-0.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              Clear all
+            </button>
+          </span>
         )}
       </div>
 

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Query as Q
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 
 from apps.api.db.models import ClassifiedSignal, Signal, SignalRelevance
 from apps.api.db.session import async_session_factory
@@ -107,6 +108,9 @@ async def list_signals(
             results.append({
                 # ── I. General ───────────────────────────────────────────────
                 "id":            str(sig.id),
+                # event_id groups duplicate coverage of the same real-world event.
+                # NULL → treat the signal as its own event (frontend falls back to id).
+                "event_id":      str(sig.event_id) if sig.event_id else None,
                 "source":        sig.source,
                 "url":           sig.url,
                 "ingested_at":   sig.ingested_at.isoformat() if sig.ingested_at else None,
@@ -156,6 +160,104 @@ async def set_analyst_score(signal_id: str, body: ScorePatch) -> dict:
             rel.analyst_score = body.score
         await session.commit()
     return {"signal_id": signal_id, "analyst_score": body.score}
+
+
+# ── Manual event clustering (analyst merge / unlink) ───────────────────────────
+#
+# event_id semantics (self-referencing FK on signals.event_id):
+#   NULL           legacy / not yet clustered  → treated as its own event
+#   event_id == id this signal IS the canonical anchor for its event
+#   event_id == X  X is the canonical anchor; this signal is a duplicate of it
+#
+# The frontend groups signals by event_id and shows the highest-relevance member
+# as the event's representative, so the *choice* of canonical id is only a
+# grouping key — display always recomputes the representative.
+
+
+def _eff(analyst: float | None, llm: float | None) -> float:
+    """Effective relevance: analyst override if set, else llm score, else 0."""
+    if analyst is not None:
+        return analyst
+    return llm if llm is not None else 0.0
+
+
+class MergeRequest(BaseModel):
+    signal_ids: list[str] = Field(..., min_length=2)
+
+
+@router.post("/merge")
+async def merge_signals(body: MergeRequest) -> dict:
+    """Merge several signals into one event.
+
+    Picks the highest-relevance signal as the canonical anchor and repoints
+    every selected signal — plus any signal already pointing at one of them —
+    to that anchor. Idempotent and safe to call repeatedly.
+    """
+    try:
+        ids = [UUID(s) for s in body.signal_ids]
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid signal id: {exc}") from exc
+
+    async with async_session_factory() as session:
+        rows = (await session.execute(
+            select(Signal.id, SignalRelevance.analyst_score, SignalRelevance.llm_score)
+            .outerjoin(SignalRelevance, Signal.id == SignalRelevance.signal_id)
+            .where(Signal.id.in_(ids))
+        )).all()
+        if len(rows) < 2:
+            raise HTTPException(400, "Need at least 2 valid signals to merge")
+
+        canonical = max(rows, key=lambda r: _eff(r[1], r[2]))[0]
+
+        # Repoint selected signals AND anything already clustered under them.
+        await session.execute(
+            update(Signal)
+            .where(or_(Signal.id.in_(ids), Signal.event_id.in_(ids)))
+            .values(event_id=canonical)
+        )
+        await session.commit()
+
+    return {"event_id": str(canonical), "merged_signals": len(rows)}
+
+
+@router.post("/{signal_id}/unlink")
+async def unlink_signal(signal_id: str) -> dict:
+    """Detach one signal from its event, making it its own standalone event.
+
+    If the detached signal was the canonical anchor and had followers, the
+    remaining members are first re-anchored to their highest-relevance member
+    so the rest of the cluster stays intact.
+    """
+    try:
+        sid = UUID(signal_id)
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid signal id: {exc}") from exc
+
+    async with async_session_factory() as session:
+        sig = await session.get(Signal, sid)
+        if sig is None:
+            raise HTTPException(404, "Signal not found")
+
+        # If this signal anchors others, reassign them to a new canonical first.
+        if sig.event_id == sid:
+            followers = (await session.execute(
+                select(Signal.id, SignalRelevance.analyst_score, SignalRelevance.llm_score)
+                .outerjoin(SignalRelevance, Signal.id == SignalRelevance.signal_id)
+                .where(Signal.event_id == sid, Signal.id != sid)
+            )).all()
+            if followers:
+                new_anchor = max(followers, key=lambda r: _eff(r[1], r[2]))[0]
+                await session.execute(
+                    update(Signal)
+                    .where(Signal.event_id == sid, Signal.id != sid)
+                    .values(event_id=new_anchor)
+                )
+
+        # Detach: this signal becomes its own single-member event.
+        sig.event_id = sid
+        await session.commit()
+
+    return {"signal_id": signal_id, "detached": True}
 
 
 # ── Stats ──────────────────────────────────────────────────────────────────────

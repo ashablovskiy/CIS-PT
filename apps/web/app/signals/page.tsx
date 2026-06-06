@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, Fragment } from "react";
 import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 
@@ -315,6 +315,51 @@ function sortSignals(signals: any[], sort: SortState | null): any[] {
   });
 }
 
+// ── Event grouping ────────────────────────────────────────────────────────────
+// Collapse signals that cover the same real-world event into one row.
+// Signals are grouped by event_id (falling back to their own id when NULL).
+// The event's displayed attributes come from its highest-relevance member
+// ("highest relevance wins"); every member is retained under `_members`.
+
+function effScore(s: any): number {
+  return s.analyst_score ?? s.llm_score ?? 0;
+}
+
+function groupIntoEvents(signals: any[]): any[] {
+  const buckets = new Map<string, any[]>();
+  for (const s of signals) {
+    const key = s.event_id ?? s.id;
+    const arr = buckets.get(key);
+    if (arr) arr.push(s); else buckets.set(key, [s]);
+  }
+  const events: any[] = [];
+  for (const [eventId, members] of buckets) {
+    const rep = members.reduce((best, s) => (effScore(s) > effScore(best) ? s : best), members[0]);
+    // newest member time drives default time-sort
+    const newest = members.reduce((a, b) =>
+      (new Date(b.occurred_at ?? 0) > new Date(a.occurred_at ?? 0) ? b : a), members[0]);
+    events.push({
+      ...rep,                              // representative attributes (spread to top level)
+      occurred_at:   newest.occurred_at ?? rep.occurred_at,
+      _eventId:      eventId,
+      _members:      members,
+      _sourceCount:  members.length,
+      _memberSources: Array.from(new Set(members.map((m) => m.source))),
+    });
+  }
+  return events;
+}
+
+// Tiny inline source badge (used in the expanded sources panel).
+function SourceBadge({ source }: { source: string }) {
+  const m = SOURCE_META[source] ?? { icon: "📌", label: source, color: "bg-slate-50 text-slate-500 border-slate-200" };
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 ${m.color}`}>
+      {m.icon} {m.label}
+    </span>
+  );
+}
+
 // ── Cell renderer ─────────────────────────────────────────────────────────────
 
 function CellContent({ colKey, signal, onScoreSaved, expanded }: {
@@ -326,12 +371,25 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
   const src = SOURCE_META[signal.source] ?? { icon: "📌", label: signal.source, color: "bg-slate-50 text-slate-500 border-slate-200" };
 
   switch (colKey) {
-    case "source":
+    case "source": {
+      const count = signal._sourceCount ?? 1;
       return (
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium border ${src.color}`}>
-          {src.icon} {src.label}
-        </span>
+        <div className="flex flex-col gap-1 items-start">
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium border ${src.color}`}>
+            {src.icon} {src.label}
+          </span>
+          {count > 1 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-600">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"
+                className={expanded ? "rotate-90 transition-transform" : "transition-transform"}>
+                <path d="M4 2l4 4-4 4z"/>
+              </svg>
+              +{count - 1} source{count - 1 > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
       );
+    }
 
     case "description":
       return (
@@ -742,11 +800,21 @@ export default function SignalsPage() {
   const [overrides,      setOverrides]      = useState<Record<string, number>>({});
   const [expandedRows,   setExpandedRows]   = useState<Set<string>>(new Set());
   const [showAddModal,   setShowAddModal]   = useState(false);
+  const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
+  const [merging,        setMerging]        = useState(false);
 
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelect(eventId: string) {
+    setSelectedEvents((prev) => {
+      const next = new Set(prev);
+      next.has(eventId) ? next.delete(eventId) : next.add(eventId);
       return next;
     });
   }
@@ -762,26 +830,30 @@ export default function SignalsPage() {
     [rawSignals, overrides]
   );
 
-  // ── Filter ────────────────────────────────────────────────────────────────
+  // ── Group signals into events (event-centered view) ─────────────────────────
+  const events = useMemo(() => groupIntoEvents(signals), [signals]);
+
+  // ── Filter (operates on events) ─────────────────────────────────────────────
 
   const needle = searchText.trim().toLowerCase();
 
-  const filtered = useMemo(() => signals.filter((s) => {
-    if (filterSource     && s.source !== filterSource)               return false;
-    if (filterTiers.size > 0 && !filterTiers.has(s.impact_tier))    return false;
-    if (filterClass      && s.event_class !== filterClass)           return false;
-    if (filterDecision   && s.decision !== filterDecision)           return false;
-    if (filterImpactType && s.impact_type !== filterImpactType)      return false;
+  const filtered = useMemo(() => events.filter((e) => {
+    if (filterSource     && !e._memberSources.includes(filterSource))  return false;
+    if (filterTiers.size > 0 && !filterTiers.has(e.impact_tier))       return false;
+    if (filterClass      && e.event_class !== filterClass)             return false;
+    if (filterDecision   && e.decision !== filterDecision)             return false;
+    if (filterImpactType && e.impact_type !== filterImpactType)        return false;
     if (needle) {
-      const hay = [
-        s.description, s.what_changed, s.mechanism,
-        s.scorer_reasoning, s.triage_reasoning, s.url,
-        s.impact_type, s.source,
-      ].filter(Boolean).join(" ").toLowerCase();
+      // Search across ALL member signals so a hit in any source surfaces the event.
+      const hay = e._members.map((m: any) => [
+        m.description, m.what_changed, m.mechanism,
+        m.scorer_reasoning, m.triage_reasoning, m.url,
+        m.impact_type, m.source,
+      ].filter(Boolean).join(" ")).join(" ").toLowerCase();
       if (!hay.includes(needle)) return false;
     }
     return true;
-  }), [signals, filterSource, filterTiers, filterClass, filterDecision, filterImpactType, needle]);
+  }), [events, filterSource, filterTiers, filterClass, filterDecision, filterImpactType, needle]);
 
   // ── Sort ──────────────────────────────────────────────────────────────────
 
@@ -797,27 +869,65 @@ export default function SignalsPage() {
     );
   }
 
-  // ── Counts for filter pills ───────────────────────────────────────────────
+  // ── Merge / detach handlers ─────────────────────────────────────────────────
 
-  const sourceCounts = useMemo(() =>
-    signals.reduce((a: Record<string, number>, s: any) => {
-      a[s.source] = (a[s.source] || 0) + 1; return a;
-    }, {}), [signals]);
+  async function mergeSelected() {
+    if (selectedEvents.size < 2) return;
+    setMerging(true);
+    try {
+      const ids: string[] = [];
+      for (const e of events) {
+        if (selectedEvents.has(e._eventId)) {
+          for (const m of e._members) ids.push(m.id);
+        }
+      }
+      const r = await fetch(`${API}/api/signals/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signal_ids: ids }),
+      });
+      if (!r.ok) throw new Error(`Merge failed (${r.status})`);
+      setSelectedEvents(new Set());
+      await mutate();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  async function detachSignal(signalId: string) {
+    try {
+      const r = await fetch(`${API}/api/signals/${signalId}/unlink`, { method: "POST" });
+      if (!r.ok) throw new Error(`Detach failed (${r.status})`);
+      await mutate();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // ── Counts for filter pills (event-level) ───────────────────────────────────
+
+  const sourceCounts = useMemo(() => {
+    const a: Record<string, number> = {};
+    for (const e of events) for (const src of e._memberSources) a[src] = (a[src] || 0) + 1;
+    return a;
+  }, [events]);
 
   const classCounts = useMemo(() =>
-    signals.reduce((a: Record<string, number>, s: any) => {
-      if (s.event_class) a[s.event_class] = (a[s.event_class] || 0) + 1; return a;
-    }, {}), [signals]);
+    events.reduce((a: Record<string, number>, e: any) => {
+      if (e.event_class) a[e.event_class] = (a[e.event_class] || 0) + 1; return a;
+    }, {}), [events]);
 
   const tierCounts = useMemo(() =>
-    signals.reduce((a: Record<number, number>, s: any) => {
-      if (s.impact_tier) a[s.impact_tier] = (a[s.impact_tier] || 0) + 1; return a;
-    }, {}), [signals]);
+    events.reduce((a: Record<number, number>, e: any) => {
+      if (e.impact_tier) a[e.impact_tier] = (a[e.impact_tier] || 0) + 1; return a;
+    }, {}), [events]);
 
   const impactTypeCounts = useMemo(() =>
-    signals.reduce((a: Record<string, number>, s: any) => {
-      if (s.impact_type) a[s.impact_type] = (a[s.impact_type] || 0) + 1; return a;
-    }, {}), [signals]);
+    events.reduce((a: Record<string, number>, e: any) => {
+      if (e.impact_type) a[e.impact_type] = (a[e.impact_type] || 0) + 1; return a;
+    }, {}), [events]);
 
   const handleScoreSaved = useCallback(
     (id: string, score: number) => setOverrides((p) => ({ ...p, [id]: score })),
@@ -855,7 +965,7 @@ export default function SignalsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Signals</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            {visible.length} signal{visible.length !== 1 ? "s" : ""} · auto-refreshes every 30 s
+            {visible.length} event{visible.length !== 1 ? "s" : ""} · {signals.length} source signal{signals.length !== 1 ? "s" : ""} · auto-refreshes every 30 s
           </p>
         </div>
 
@@ -930,7 +1040,7 @@ export default function SignalsPage() {
         {/* Row 1: Source + time window */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12">Source</span>
-          <FilterPill label="All" count={signals.length} active={!filterSource} onClick={() => setFilterSource(null)} />
+          <FilterPill label="All" count={events.length} active={!filterSource} onClick={() => setFilterSource(null)} />
           {Object.keys(SOURCE_META).map((src) => {
             const m = SOURCE_META[src];
             const cnt = sourceCounts[src] ?? 0;
@@ -1015,6 +1125,32 @@ export default function SignalsPage() {
         )}
       </div>
 
+      {/* ── Merge action bar (appears when events are selected) ──────────── */}
+      {selectedEvents.size > 0 && (
+        <div className="mb-3 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
+          <span className="text-sm font-medium text-blue-900">
+            {selectedEvents.size} event{selectedEvents.size !== 1 ? "s" : ""} selected
+          </span>
+          <button
+            onClick={mergeSelected}
+            disabled={selectedEvents.size < 2 || merging}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold
+              hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {merging ? "Merging…" : "Merge into one event"}
+          </button>
+          {selectedEvents.size < 2 && (
+            <span className="text-xs text-blue-500">Select at least 2 events to merge</span>
+          )}
+          <button
+            onClick={() => setSelectedEvents(new Set())}
+            className="ml-auto px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 hover:bg-white/60 rounded-lg transition-colors"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm border-collapse">
@@ -1073,17 +1209,20 @@ export default function SignalsPage() {
             {!isLoading && visible.length === 0 && (
               <tr>
                 <td colSpan={activeCols.length} className="px-4 py-10 text-center text-slate-400 text-sm">
-                  No signals match the current filters.
+                  No events match the current filters.
                 </td>
               </tr>
             )}
             {visible.map((signal: any) => {
               const isExpanded = expandedRows.has(signal.id);
+              const isSelected = selectedEvents.has(signal._eventId);
+              const multi = (signal._sourceCount ?? 1) > 1;
               return (
-              <tr key={signal.id}
+              <Fragment key={signal._eventId}>
+              <tr
                 onClick={() => toggleRow(signal.id)}
-                className={`group border-b border-slate-100 last:border-0 cursor-pointer transition-colors
-                  ${isExpanded ? "bg-slate-50" : "hover:bg-slate-50/70"}`}>
+                className={`group border-b border-slate-100 cursor-pointer transition-colors
+                  ${isSelected ? "bg-blue-50/60" : isExpanded ? "bg-slate-50" : "hover:bg-slate-50/70"}`}>
                 {activeCols.map((col) => (
                   <td
                     key={col.key}
@@ -1093,10 +1232,62 @@ export default function SignalsPage() {
                       ${col.section === "scorer" && isFull ? "bg-violet-50/20 border-l border-l-violet-100 first:border-l-0" : ""}
                       ${col.section === "triage"  && isFull ? "bg-teal-50/20  border-l border-l-teal-100  first:border-l-0" : ""}`}
                   >
-                    <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
+                    {col.key === "source" ? (
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleSelect(signal._eventId)}
+                          className="mt-0.5 accent-blue-600 cursor-pointer"
+                          title="Select event for merge"
+                        />
+                        <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
+                      </div>
+                    ) : (
+                      <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
+                    )}
                   </td>
                 ))}
               </tr>
+
+              {/* Sources sub-panel — the individual articles behind this event */}
+              {isExpanded && multi && (
+                <tr className="bg-slate-50/80 border-b border-slate-100">
+                  <td colSpan={activeCols.length} className="px-4 pb-3 pt-0">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 pl-6">
+                      {signal._sourceCount} sources covering this event
+                    </div>
+                    <div className="flex flex-col gap-1.5 pl-6">
+                      {signal._members.map((m: any) => (
+                        <div key={m.id}
+                          className="flex items-center gap-2 text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <SourceBadge source={m.source} />
+                          <span className="flex-1 text-slate-700 truncate">{m.description}</span>
+                          {m.occurred_at && (
+                            <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                              {new Date(m.occurred_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            </span>
+                          )}
+                          {m.url && (
+                            <a href={m.url} target="_blank" rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[10px] text-blue-500 hover:text-blue-700 whitespace-nowrap">↗ open</a>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); detachSignal(m.id); }}
+                            className="text-[10px] text-slate-400 hover:text-red-600 whitespace-nowrap font-medium"
+                            title="Remove this article from the event (make it its own event)"
+                          >
+                            detach
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             )})}
           </tbody>
         </table>
@@ -1104,9 +1295,9 @@ export default function SignalsPage() {
 
       {/* Footer */}
       <div className="mt-2 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-        <span>{visible.length} signals shown</span>
-        {signals.length !== visible.length && (
-          <span>· {signals.length - visible.length} hidden by filters</span>
+        <span>{visible.length} events shown</span>
+        {events.length !== visible.length && (
+          <span>· {events.length - visible.length} hidden by filters</span>
         )}
         {sort && (
           <span>· sorted by {COLUMNS.find((c) => c.key === sort.col)?.label} {sort.dir}</span>

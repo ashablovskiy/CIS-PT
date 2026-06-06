@@ -36,7 +36,9 @@ logger = logging.getLogger(__name__)
 CLUSTER_THRESHOLD = 0.85
 
 # How far back to look for a matching event cluster.
-CLUSTER_WINDOW_HOURS = 24
+# 72h (3 days) so a follow-up article published a day or two after the original
+# coverage still attaches to the same event line rather than spawning a new one.
+CLUSTER_WINDOW_HOURS = 72
 
 
 def payload_to_cluster_text(payload: dict[str, Any]) -> str:

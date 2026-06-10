@@ -260,6 +260,112 @@ async def unlink_signal(signal_id: str) -> dict:
     return {"signal_id": signal_id, "detached": True}
 
 
+# ── Admin: one-shot recluster all signals with NULL event_id ──────────────────
+# Safe to call repeatedly (idempotent). Uses the same Voyage AI embeddings
+# already stored on signals — no new embedding API calls.
+
+@router.post("/admin/recluster")
+async def admin_recluster() -> dict:
+    """Re-run event clustering across ALL signals that have an embedding but
+    no event_id (event_id IS NULL or event_id = own id treated as un-clustered).
+
+    Uses in-DB cosine similarity (pgvector) with the same threshold and window
+    as live ingestion. Safe to call repeatedly — idempotent.
+    """
+    import numpy as np
+    from collections import defaultdict as _dd
+    from datetime import timedelta as _td
+    from apps.api.network.event_cluster import CLUSTER_THRESHOLD, CLUSTER_WINDOW_HOURS
+
+    async with async_session_factory() as session:
+        # Load all signals with embeddings
+        rows = (await session.execute(
+            select(Signal.id, Signal.source, Signal.source_id,
+                   Signal.occurred_at, Signal.event_id, Signal.embedding)
+            .where(Signal.embedding.isnot(None))
+            .order_by(Signal.occurred_at)
+        )).all()
+
+    if not rows:
+        return {"status": "ok", "merged": 0, "message": "No embedded signals found"}
+
+    # Build quick lookup
+    sigs = {str(r.id): r for r in rows}
+    embs = {str(r.id): np.array(r.embedding) for r in rows}
+
+    # Union-Find
+    parent = {sid: sid for sid in sigs}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        # Canonical = earliest occurred_at
+        if sigs[ra].occurred_at <= sigs[rb].occurred_at:
+            parent[rb] = ra
+        else:
+            parent[ra] = rb
+
+    ids = list(sigs.keys())
+    window = _td(hours=CLUSTER_WINDOW_HOURS)
+    merges = 0
+    for i, id_a in enumerate(ids):
+        ra = sigs[id_a]
+        ea = embs[id_a]
+        t_lo = ra.occurred_at - window
+        t_hi = ra.occurred_at + window
+        for id_b in ids[i + 1:]:
+            rb = sigs[id_b]
+            if rb.occurred_at > t_hi:
+                break
+            if rb.occurred_at < t_lo:
+                continue
+            if ra.source_id == rb.source_id:
+                continue
+            sim = float(np.dot(ea, embs[id_b]) /
+                        (np.linalg.norm(ea) * np.linalg.norm(embs[id_b])))
+            if sim > CLUSTER_THRESHOLD:
+                union(id_a, id_b)
+                merges += 1
+
+    # Build update map: signal → canonical
+    canonical_map = {sid: find(sid) for sid in ids if find(sid) != sid}
+
+    if not canonical_map:
+        return {"status": "ok", "merged": 0, "message": "All signals already correctly clustered"}
+
+    # Apply updates
+    import uuid as _uuid
+    async with async_session_factory() as session:
+        async with session.begin():
+            for sig_id, canonical_id in canonical_map.items():
+                await session.execute(
+                    update(Signal)
+                    .where(Signal.id == _uuid.UUID(sig_id))
+                    .values(event_id=_uuid.UUID(canonical_id))
+                )
+            # Ensure all canonicals have event_id = self
+            for canonical_id in set(canonical_map.values()):
+                await session.execute(
+                    update(Signal)
+                    .where(Signal.id == _uuid.UUID(canonical_id))
+                    .values(event_id=_uuid.UUID(canonical_id))
+                )
+
+    return {
+        "status": "ok",
+        "signals_processed": len(rows),
+        "merged": len(canonical_map),
+        "message": f"Re-pointed {len(canonical_map)} signals to canonical event_ids",
+    }
+
+
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")

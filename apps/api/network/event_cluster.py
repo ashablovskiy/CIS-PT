@@ -67,6 +67,7 @@ async def find_event_cluster(
     occurred_at: datetime,
     source: str,
     *,
+    source_id: str | None = None,
     threshold: float = CLUSTER_THRESHOLD,
     window_hours: int = CLUSTER_WINDOW_HOURS,
 ) -> uuid.UUID:
@@ -74,7 +75,7 @@ async def find_event_cluster(
 
     Queries the signals table for an already-stored signal that:
       - arrived within `window_hours` of this signal
-      - comes from a DIFFERENT source
+      - has a different source_id (i.e. is a different article)
       - has cosine similarity > `threshold` with this signal's embedding
 
     If found, returns that signal's event_id (or its own id if event_id is
@@ -86,11 +87,20 @@ async def find_event_cluster(
     If no match is found, returns `signal_id` itself — this signal IS the
     canonical event and will serve as the anchor for future duplicates.
 
+    NOTE: We exclude by source_id (unique per article) rather than source
+    (agent name) so that multi-publisher aggregators like the IR/OEM agent
+    can cluster across their articles. The IR agent tags every signal
+    source='ir' regardless of whether it came from Reuters, Bloomberg, or
+    any other outlet — so a source-level guard would block all IR↔IR
+    clustering even when three outlets cover the exact same event.
+    The 0.85 cosine threshold is strict enough to prevent false positives.
+
     IMPORTANT: the caller must flush the session before calling this so that
     sibling signals inserted in the same batch are visible for within-batch
     cross-source dedup.
     """
-    if not embedding:
+    # Guard works for list, numpy array, or None (avoid truthiness on arrays).
+    if embedding is None or len(embedding) == 0:
         return signal_id
 
     cutoff = occurred_at - timedelta(hours=window_hours)
@@ -100,12 +110,16 @@ async def find_event_cluster(
     # float array, so direct interpolation is safe.
     vec_literal = "[" + ",".join(str(v) for v in embedding) + "]"
 
+    # Exclude by source_id (unique per article). Falls back to excluding by
+    # signal_id alone if source_id is not provided (legacy callers).
+    excl_source_id = source_id or str(signal_id)
+
     result = await session.execute(
         text(f"""
             SELECT id, event_id
             FROM signals
             WHERE occurred_at >= :cutoff
-              AND source       != :source
+              AND source_id    != :excl_source_id
               AND id           != :signal_id
               AND embedding    IS NOT NULL
               AND 1 - (embedding <=> '{vec_literal}'::vector) > :threshold
@@ -114,7 +128,7 @@ async def find_event_cluster(
         """),
         {
             "cutoff": cutoff,
-            "source": source,
+            "excl_source_id": excl_source_id,
             "signal_id": str(signal_id),
             "threshold": threshold,
         },

@@ -211,9 +211,11 @@ class BaseIngestionAgent(ABC):
                 # LLM unavailable (API timeout, budget exhausted, etc.) — fall
                 # back to rule-based scoring: assign 0.4 (review tier) so items
                 # are persisted for later manual review rather than lost.
+                from tenacity import RetryError
+                cause = exc.last_attempt.exception() if isinstance(exc, RetryError) else exc
                 logger.warning(
-                    "[%s] LLM batch %d-%d failed (%s) — using rule-based fallback (score=0.4)",
-                    self.agent_name, i, i + len(batch), type(exc).__name__,
+                    "[%s] LLM batch %d-%d failed (%s: %s) — using rule-based fallback (score=0.4)",
+                    self.agent_name, i, i + len(batch), type(cause).__name__, cause,
                 )
                 scored_batch = [
                     ScoredItem(
@@ -492,6 +494,7 @@ class BaseIngestionAgent(ABC):
                             embedding,
                             scored.item.occurred_at,
                             scored.item.source,
+                            source_id=scored.item.source_id,
                         )
                         await session.execute(
                             update(Signal)

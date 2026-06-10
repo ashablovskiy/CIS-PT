@@ -372,21 +372,26 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
   switch (colKey) {
     case "source": {
-      const count = signal._sourceCount ?? 1;
+      // Build per-source-type count map from all members of this event cluster.
+      // For a 3×IR/OEM cluster: { ir: 3 }. For mixed: { ir: 2, press: 1 }.
+      const memberSources: string[] = signal._memberSources ?? [signal.source];
+      const sourceCounts: Record<string, number> = {};
+      for (const s of memberSources) sourceCounts[s] = (sourceCounts[s] ?? 0) + 1;
+      const entries = Object.entries(sourceCounts);
       return (
-        <div className="flex flex-col gap-1 items-start">
-          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium border ${src.color}`}>
-            {src.icon} {src.label}
-          </span>
-          {count > 1 && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-600">
-              <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"
-                className={expanded ? "rotate-90 transition-transform" : "transition-transform"}>
-                <path d="M4 2l4 4-4 4z"/>
-              </svg>
-              +{count - 1} source{count - 1 > 1 ? "s" : ""}
-            </span>
-          )}
+        <div className="flex flex-col gap-0.5 items-start">
+          {entries.map(([srcKey, cnt]) => {
+            const m = SOURCE_META[srcKey] ?? { icon: "📌", label: srcKey, color: "bg-slate-50 text-slate-500 border-slate-200" };
+            return (
+              <span key={srcKey}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium border ${m.color}`}>
+                {m.icon} {m.label}
+                {cnt > 1 && (
+                  <span className="opacity-60 font-semibold text-[10px]">×{cnt}</span>
+                )}
+              </span>
+            );
+          })}
         </div>
       );
     }
@@ -844,6 +849,7 @@ export default function SignalsPage() {
   const [showAddModal,   setShowAddModal]   = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
   const [merging,        setMerging]        = useState(false);
+  const [mergeError,     setMergeError]     = useState<string | null>(null);
 
   function toggleRow(id: string) {
     setExpandedRows((prev) => {
@@ -916,6 +922,7 @@ export default function SignalsPage() {
   async function mergeSelected() {
     if (selectedEvents.size < 2) return;
     setMerging(true);
+    setMergeError(null);
     try {
       const ids: string[] = [];
       for (const e of events) {
@@ -928,11 +935,15 @@ export default function SignalsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signal_ids: ids }),
       });
-      if (!r.ok) throw new Error(`Merge failed (${r.status})`);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail ?? `HTTP ${r.status}`);
+      }
       setSelectedEvents(new Set());
       await mutate();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setMergeError(err?.message ?? "Merge failed — check console");
+      console.error("merge error:", err);
     } finally {
       setMerging(false);
     }
@@ -1169,27 +1180,34 @@ export default function SignalsPage() {
 
       {/* ── Merge action bar (appears when events are selected) ──────────── */}
       {selectedEvents.size > 0 && (
-        <div className="mb-3 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
-          <span className="text-sm font-medium text-blue-900">
-            {selectedEvents.size} event{selectedEvents.size !== 1 ? "s" : ""} selected
-          </span>
-          <button
-            onClick={mergeSelected}
-            disabled={selectedEvents.size < 2 || merging}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold
-              hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {merging ? "Merging…" : "Merge into one event"}
-          </button>
-          {selectedEvents.size < 2 && (
-            <span className="text-xs text-blue-500">Select at least 2 events to merge</span>
+        <div className="mb-3 flex flex-col gap-1.5">
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
+            <span className="text-sm font-medium text-blue-900">
+              {selectedEvents.size} event{selectedEvents.size !== 1 ? "s" : ""} selected
+            </span>
+            <button
+              onClick={mergeSelected}
+              disabled={selectedEvents.size < 2 || merging}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold
+                hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {merging ? "Merging…" : "Merge into one event"}
+            </button>
+            {selectedEvents.size < 2 && (
+              <span className="text-xs text-blue-500">Select at least 2 events to merge</span>
+            )}
+            <button
+              onClick={() => { setSelectedEvents(new Set()); setMergeError(null); }}
+              className="ml-auto px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 hover:bg-white/60 rounded-lg transition-colors"
+            >
+              Clear selection
+            </button>
+          </div>
+          {mergeError && (
+            <div className="px-4 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
+              ✗ {mergeError}
+            </div>
           )}
-          <button
-            onClick={() => setSelectedEvents(new Set())}
-            className="ml-auto px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 hover:bg-white/60 rounded-lg transition-colors"
-          >
-            Clear selection
-          </button>
         </div>
       )}
 

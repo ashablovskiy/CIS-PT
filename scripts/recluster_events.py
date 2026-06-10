@@ -16,10 +16,19 @@ This script:
 
 Safe to re-run (idempotent — skips already-embedded signals).
 
+Free-tier mode (default, --free-tier):
+    Voyage AI free tier = 3 RPM / 10K TPM.
+    Batch size 10 (~3K tokens) + 21s sleep between batches.
+    ~244 remaining signals ≈ 25 batches ≈ 9 minutes.
+
+Paid-tier mode (--no-free-tier):
+    Batch size 50, 0.2s sleep — for when a payment method is added.
+
 Usage:
-    uv run python scripts/recluster_events.py
-    uv run python scripts/recluster_events.py --limit 500   # cap at N signals
-    uv run python scripts/recluster_events.py --dry-run     # count only
+    uv run python scripts/recluster_events.py               # free tier (default)
+    uv run python scripts/recluster_events.py --no-free-tier
+    uv run python scripts/recluster_events.py --limit 50    # test first 50
+    uv run python scripts/recluster_events.py --dry-run
 """
 from __future__ import annotations
 
@@ -35,7 +44,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("recluster")
 
-_BATCH = 50   # signals per embedding call
+_BATCH_FREE = 10    # free tier:  3 RPM / 10K TPM → ~3K tokens per request
+_BATCH_PAID = 50    # paid tier:  higher limits → 50 signals per request
+_SLEEP_FREE = 21.0  # seconds between batches on free tier (safely ≤ 3 RPM)
+_SLEEP_PAID =  0.2
 
 
 async def main(args: argparse.Namespace) -> None:
@@ -53,7 +65,7 @@ async def main(args: argparse.Namespace) -> None:
     # ── 1. Fetch un-embedded signals ─────────────────────────────────────────
     async with async_session_factory() as s:
         stmt = (
-            select(Signal.id, Signal.source, Signal.raw_payload, Signal.occurred_at)
+            select(Signal.id, Signal.source, Signal.source_id, Signal.raw_payload, Signal.occurred_at)
             .where(Signal.embedding.is_(None))
             .order_by(Signal.occurred_at.desc())
         )
@@ -61,7 +73,17 @@ async def main(args: argparse.Namespace) -> None:
             stmt = stmt.limit(args.limit)
         rows = (await s.execute(stmt)).all()
 
-    logger.info("Found %d signals with NULL embedding", len(rows))
+    batch_size = _BATCH_FREE if args.free_tier else _BATCH_PAID
+    sleep_secs = _SLEEP_FREE if args.free_tier else _SLEEP_PAID
+    n_batches  = -(-len(rows) // batch_size)   # ceiling division
+    eta_min    = n_batches * sleep_secs / 60
+
+    logger.info(
+        "Found %d signals with NULL embedding | batch=%d sleep=%.0fs "
+        "→ %d batches ≈ %.0f min (%s tier)",
+        len(rows), batch_size, sleep_secs, n_batches, eta_min,
+        "FREE" if args.free_tier else "PAID",
+    )
 
     if args.dry_run:
         logger.info("[dry-run] would process %d signals — exiting", len(rows))
@@ -70,8 +92,8 @@ async def main(args: argparse.Namespace) -> None:
     # ── 2. Embed + cluster in batches ─────────────────────────────────────────
     embedded = clustered = errors = 0
 
-    for i in range(0, len(rows), _BATCH):
-        batch = rows[i : i + _BATCH]
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
         texts = [payload_to_cluster_text(r.raw_payload or {}) for r in batch]
 
         try:
@@ -107,6 +129,7 @@ async def main(args: argparse.Namespace) -> None:
                         embedding=vec,
                         occurred_at=row.occurred_at or datetime.now(UTC),
                         source=row.source,
+                        source_id=row.source_id,
                         threshold=CLUSTER_THRESHOLD,
                         window_hours=CLUSTER_WINDOW_HOURS,
                     )
@@ -126,12 +149,17 @@ async def main(args: argparse.Namespace) -> None:
                             .values(event_id=row.id)
                         )
 
-        pct = (i + len(batch)) / len(rows) * 100
+        done  = i + len(batch)
+        pct   = done / len(rows) * 100
+        remaining_batches = (len(rows) - done + batch_size - 1) // batch_size
+        eta_s = remaining_batches * sleep_secs
         logger.info(
-            "[%d%%] embedded=%d  clustered(dedup)=%d  errors=%d",
+            "[%d%%] embedded=%d  clustered(dedup)=%d  errors=%d  ETA≈%dm%02ds",
             int(pct), embedded, clustered, errors,
+            int(eta_s // 60), int(eta_s % 60),
         )
-        await asyncio.sleep(0.2)   # be gentle on Voyage rate limits
+        if done < len(rows):
+            await asyncio.sleep(sleep_secs)
 
     logger.info(
         "════ done ════  embedded=%d  clusters_found=%d  errors=%d",
@@ -147,8 +175,11 @@ async def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Backfill embeddings and event clustering")
-    ap.add_argument("--limit",   type=int, default=0,
+    ap.add_argument("--limit",      type=int, default=0,
                     help="max signals to process (default: all)")
-    ap.add_argument("--dry-run", action="store_true",
+    ap.add_argument("--dry-run",   action="store_true",
                     help="count candidates without writing to DB")
+    ap.add_argument("--no-free-tier", dest="free_tier", action="store_false",
+                    help="use paid-tier batch/sleep settings (batch=50, sleep=0.2s)")
+    ap.set_defaults(free_tier=True)
     asyncio.run(main(ap.parse_args()))

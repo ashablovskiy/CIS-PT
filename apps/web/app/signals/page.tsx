@@ -938,7 +938,7 @@ const TIER_OPTS = [1, 2, 3, 4];
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SignalsPage() {
-  const [hours,          setHours]          = useState(48);
+  const [hours,          setHours]          = useState(720);  // 30d default — data cadence is sparse/manual
   const [isFull,         setIsFull]         = useState(false);
   const [sort,           setSort]           = useState<SortState | null>({ col: "priority", dir: "desc" });
   const [filterSource,     setFilterSource]     = useState<string | null>(null);

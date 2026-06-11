@@ -117,6 +117,8 @@ async def list_signals(
                 "occurred_at":   sig.occurred_at.isoformat() if sig.occurred_at else None,
                 "description":   _signal_description(sig.source, payload, title, summary),
                 "price_move":    _price_movement(payload) if sig.source == "prices" else None,
+                # Per-horizon % moves ({"1d":…, "5d":…, "30d":…}) for the UI sparkline.
+                "moves_pct":     payload.get("moves_pct") if sig.source == "prices" else None,
                 # ── II. Relevance Scorer output ──────────────────────────────
                 "llm_score":       rel.llm_score if rel else None,
                 "impact_tier":     rel.impact_tier if rel else None,

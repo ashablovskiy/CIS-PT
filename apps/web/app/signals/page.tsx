@@ -22,14 +22,14 @@ const fetcher = async (url: string) => {
 
 // ── Source metadata ───────────────────────────────────────────────────────────
 
-const SOURCE_META: Record<string, { icon: string; label: string; color: string }> = {
-  prices:    { icon: "💹", label: "Prices",    color: "bg-amber-50 text-amber-700 border-amber-200" },
-  gdelt:     { icon: "🌍", label: "GDELT",     color: "bg-purple-50 text-purple-700 border-purple-200" },
-  logistics: { icon: "🚢", label: "Logistics", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  press:     { icon: "📰", label: "Press",     color: "bg-slate-50 text-slate-600 border-slate-200" },
-  demand:    { icon: "📈", label: "Demand",    color: "bg-teal-50 text-teal-700 border-teal-200" },
-  sec:       { icon: "📄", label: "SEC",       color: "bg-gray-50 text-gray-600 border-gray-200" },
-  ir:        { icon: "🏭", label: "IR / OEM",  color: "bg-orange-50 text-orange-700 border-orange-200" },
+const SOURCE_META: Record<string, { icon: string; label: string; color: string; dot: string }> = {
+  prices:    { icon: "💹", label: "Prices",    color: "bg-amber-50 text-amber-700 border-amber-200",   dot: "bg-amber-400" },
+  gdelt:     { icon: "🌍", label: "GDELT",     color: "bg-purple-50 text-purple-700 border-purple-200", dot: "bg-purple-400" },
+  logistics: { icon: "🚢", label: "Logistics", color: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-400" },
+  press:     { icon: "📰", label: "Press",     color: "bg-slate-50 text-slate-600 border-slate-200",     dot: "bg-slate-400" },
+  demand:    { icon: "📈", label: "Demand",    color: "bg-teal-50 text-teal-700 border-teal-200",        dot: "bg-teal-400" },
+  sec:       { icon: "📄", label: "SEC",       color: "bg-gray-50 text-gray-600 border-gray-200",        dot: "bg-gray-400" },
+  ir:        { icon: "🏭", label: "IR / OEM",  color: "bg-orange-50 text-orange-700 border-orange-200",  dot: "bg-orange-400" },
 };
 
 // ── Event class metadata ──────────────────────────────────────────────────────
@@ -86,11 +86,28 @@ const ENTITY_COLORS: Record<string, string> = {
   countries:   "bg-purple-50 text-purple-700 border-purple-200",
 };
 
+// ── Tier accent system (drives the row priority rail + tier badges) ────────────
+
+const TIER_RAIL: Record<number, string> = {
+  1: "border-l-red-500",
+  2: "border-l-orange-400",
+  3: "border-l-amber-300",
+  4: "border-l-slate-200",
+};
+const TIER_METER: Record<number, string> = {
+  1: "bg-red-500",
+  2: "bg-orange-400",
+  3: "bg-amber-400",
+  4: "bg-slate-300",
+};
+// Composite-priority weighting (relevance + tier + corroboration + recency)
+const TIER_WEIGHT: Record<number, number> = { 1: 1.0, 2: 0.7, 3: 0.4, 4: 0.15 };
+
 // ── Small reusable components ─────────────────────────────────────────────────
 
 function Chip({ label, color }: { label: string; color: string }) {
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap ${color}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium border whitespace-nowrap ${color}`}>
       {label}
     </span>
   );
@@ -112,22 +129,52 @@ function ScorePill({ score, overridden }: { score: number; overridden?: boolean 
     score >= 0.8 ? "bg-red-50 text-red-700 border-red-200" :
     score >= 0.6 ? "bg-orange-50 text-orange-700 border-orange-200" :
     score >= 0.4 ? "bg-amber-50 text-amber-700 border-amber-200" :
-                   "bg-green-50 text-green-700 border-green-200";
+                   "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (overridden) {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-dashed border-violet-300 bg-violet-50 text-violet-700 whitespace-nowrap">
-        {score.toFixed(2)} <span className="opacity-60 font-normal">·ed</span>
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold border border-dashed border-violet-300 bg-violet-50 text-violet-700 whitespace-nowrap font-mono">
+        {score.toFixed(2)} <span className="opacity-60 font-normal not-italic">·ed</span>
       </span>
     );
   }
-  return <Chip label={score.toFixed(2)} color={color} />;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-semibold font-mono border whitespace-nowrap ${color}`}>
+      {score.toFixed(2)}
+    </span>
+  );
+}
+
+// Compact priority meter + numeric, used in the leading PRI column.
+function PriorityMeter({ score, tier, rank, showRank }: {
+  score: number; tier: number | null | undefined; rank: number; showRank: boolean;
+}) {
+  const pct = Math.round(Math.max(0, Math.min(1, score)) * 100);
+  const meter = TIER_METER[tier ?? 4] ?? "bg-slate-300";
+  const top = showRank && rank <= 3;
+  return (
+    <div className="flex flex-col gap-1 min-w-[52px]">
+      <div className="flex items-baseline gap-1">
+        {showRank && (
+          <span className={`text-[11px] font-bold tabular-nums ${top ? "text-amber-500" : "text-slate-400"}`}>
+            {top ? "★" : ""}{rank}
+          </span>
+        )}
+        <span className="text-[11px] font-mono font-semibold text-slate-700 tabular-nums">
+          {score.toFixed(2)}
+        </span>
+      </div>
+      <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full rounded-full ${meter}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function DirectionBadge({ dir }: { dir: string | undefined }) {
   if (!dir) return <span className="text-slate-300 text-xs">—</span>;
   const map: Record<string, { icon: string; color: string }> = {
     negative: { icon: "▼", color: "bg-red-50 text-red-700 border-red-200" },
-    positive: { icon: "▲", color: "bg-green-50 text-green-700 border-green-200" },
+    positive: { icon: "▲", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
     neutral:  { icon: "→", color: "bg-slate-100 text-slate-500 border-slate-200" },
   };
   const m = map[dir] ?? map.neutral;
@@ -143,6 +190,42 @@ function MagnitudeBadge({ mag }: { mag: string | undefined }) {
     minor:    "bg-slate-100 text-slate-500 border-slate-200",
   };
   return <Chip label={mag} color={map[mag] ?? IMPACT_FALLBACK} />;
+}
+
+// Mini sparkline for price moves: bars per horizon (1d / 5d / 30d) + headline %.
+// Degrades to a plain trend chip when per-horizon data isn't present.
+function PriceTrend({ moves, label }: { moves: Record<string, number> | null | undefined; label: string | null }) {
+  const order = ["1d", "5d", "30d"];
+  const pts = moves ? order.filter((k) => moves[k] != null).map((k) => ({ k, v: moves[k] })) : [];
+  const headlinePct = (() => {
+    const m = (label ?? "").match(/([+-]?\d+(?:\.\d+)?)%/);
+    return m ? parseFloat(m[1]) : (pts.length ? pts[pts.length - 1].v : null);
+  })();
+  const up = (headlinePct ?? 0) >= 0;
+
+  if (!pts.length && headlinePct == null) {
+    return label ? <span className="text-xs text-slate-500 font-mono">{label}</span> : null;
+  }
+  const maxAbs = Math.max(1, ...pts.map((p) => Math.abs(p.v)));
+  return (
+    <div className="flex items-center gap-2">
+      {pts.length > 0 && (
+        <div className="flex items-end gap-0.5 h-5" title={pts.map((p) => `${p.k}: ${p.v > 0 ? "+" : ""}${p.v}%`).join("  ")}>
+          {pts.map((p) => {
+            const h = Math.max(3, Math.round((Math.abs(p.v) / maxAbs) * 18));
+            return (
+              <div key={p.k} className={`w-1.5 rounded-sm ${p.v >= 0 ? "bg-emerald-400" : "bg-red-400"}`} style={{ height: `${h}px` }} />
+            );
+          })}
+        </div>
+      )}
+      {headlinePct != null && (
+        <span className={`text-[11px] font-mono font-semibold tabular-nums ${up ? "text-emerald-600" : "text-red-600"}`}>
+          {up ? "▲" : "▼"} {Math.abs(headlinePct).toFixed(1)}%
+        </span>
+      )}
+    </div>
+  );
 }
 
 function EntityPills({ entities }: { entities: Record<string, string[]> | null | undefined }) {
@@ -203,7 +286,7 @@ function AssessCell({ signal, onSaved }: { signal: any; onSaved: (id: string, sc
     return (
       <button
         onClick={(e) => { e.stopPropagation(); setDraft(seed); setOpen(true); }}
-        className="text-xs text-slate-400 hover:text-slate-700 hover:underline transition-colors whitespace-nowrap"
+        className="text-xs text-slate-400 hover:text-violet-600 hover:underline transition-colors whitespace-nowrap"
       >
         {signal.analyst_score != null ? "Change" : "Set score"}
       </button>
@@ -239,7 +322,6 @@ type ColDef = {
   essential: boolean;
   width: string;
   sortValue?: (s: any) => any;
-  th?: string; // extra th className
 };
 
 const SECTION_COLORS = {
@@ -248,29 +330,25 @@ const SECTION_COLORS = {
   triage:  "text-teal-600",
 };
 
-const SECTION_BG = {
-  general: "",
-  scorer:  "bg-violet-50/40",
-  triage:  "bg-teal-50/40",
-};
-
 const COLUMNS: ColDef[] = [
   // I. GENERAL
-  { key: "source",      label: "Source",       section: "general", essential: true,  width: "w-[110px]",
+  { key: "priority",    label: "Pri",          section: "general", essential: true,  width: "w-[72px]",
+    sortValue: (s) => s._priority ?? 0 },
+  { key: "source",      label: "Source",       section: "general", essential: true,  width: "w-[120px]",
     sortValue: (s) => s.source },
-  { key: "description", label: "Signal",        section: "general", essential: true,  width: "min-w-[220px] max-w-[320px]" },
-  { key: "occurred_at", label: "Time",           section: "general", essential: true,  width: "w-[90px]",
+  { key: "description", label: "Signal",        section: "general", essential: true,  width: "min-w-[260px] max-w-[380px]" },
+  { key: "occurred_at", label: "Time",           section: "general", essential: true,  width: "w-[84px]",
     sortValue: (s) => s.occurred_at },
-  { key: "ingested_at", label: "Ingested",       section: "general", essential: true,  width: "w-[90px]",
+  { key: "ingested_at", label: "Ingested",       section: "general", essential: false, width: "w-[96px]",
     sortValue: (s) => s.ingested_at },
 
   // II. SCORER
   { key: "impact_tier",      label: "Tier",         section: "scorer", essential: true,  width: "w-[56px]",
     sortValue: (s) => s.impact_tier ?? 99 },
-  { key: "what_changed",     label: "What Changed", section: "scorer", essential: false, width: "min-w-[160px] max-w-[240px]" },
-  { key: "mechanism",        label: "Mechanism",    section: "scorer", essential: true,  width: "min-w-[180px] max-w-[260px]" },
-  { key: "llm_score",        label: "Relevance",    section: "scorer", essential: false, width: "w-[80px]",
+  { key: "llm_score",        label: "Relevance",    section: "scorer", essential: true,  width: "w-[88px]",
     sortValue: (s) => s.llm_score ?? 0 },
+  { key: "mechanism",        label: "Mechanism",    section: "scorer", essential: true,  width: "min-w-[200px] max-w-[280px]" },
+  { key: "what_changed",     label: "What Changed", section: "scorer", essential: false, width: "min-w-[160px] max-w-[240px]" },
   { key: "signal_kind",      label: "Kind",         section: "scorer", essential: false, width: "w-[110px]",
     sortValue: (s) => s.signal_kind ?? "" },
   { key: "impact_type",      label: "Impact Type",  section: "scorer", essential: false, width: "w-[150px]",
@@ -279,8 +357,8 @@ const COLUMNS: ColDef[] = [
 
   // III. TRIAGE
   { key: "graph_entities",          label: "Entities",      section: "triage", essential: true,  width: "min-w-[160px] max-w-[220px]" },
-  { key: "geo_tags",                label: "Geo",           section: "triage", essential: true,  width: "min-w-[120px] max-w-[180px]" },
-  { key: "triage_reasoning",        label: "Reasoning",     section: "triage", essential: true,  width: "min-w-[180px] max-w-[260px]" },
+  { key: "geo_tags",                label: "Geo",           section: "triage", essential: false, width: "min-w-[120px] max-w-[180px]" },
+  { key: "triage_reasoning",        label: "Reasoning",     section: "triage", essential: false, width: "min-w-[180px] max-w-[260px]" },
   { key: "event_class",             label: "Event Class",   section: "triage", essential: false, width: "w-[120px]",
     sortValue: (s) => s.event_class ?? "" },
   { key: "secondary_event_classes", label: "Secondary",     section: "triage", essential: false, width: "w-[140px]" },
@@ -293,7 +371,7 @@ const COLUMNS: ColDef[] = [
     sortValue: (s) => s.confidence ?? 0 },
 
   // ACTION
-  { key: "assess", label: "Assess", section: "general", essential: true, width: "w-[130px]" },
+  { key: "assess", label: "Assess", section: "general", essential: true, width: "w-[120px]" },
 ];
 
 // ── Sort helpers ──────────────────────────────────────────────────────────────
@@ -315,7 +393,7 @@ function sortSignals(signals: any[], sort: SortState | null): any[] {
   });
 }
 
-// ── Event grouping ────────────────────────────────────────────────────────────
+// ── Event grouping + composite priority ───────────────────────────────────────
 // Collapse signals that cover the same real-world event into one row.
 // Signals are grouped by event_id (falling back to their own id when NULL).
 // The event's displayed attributes come from its highest-relevance member
@@ -323,6 +401,20 @@ function sortSignals(signals: any[], sort: SortState | null): any[] {
 
 function effScore(s: any): number {
   return s.analyst_score ?? s.llm_score ?? 0;
+}
+
+// Composite priority: relevance×0.4 + tier×0.3 + corroboration×0.2 + recency×0.1.
+// All terms normalised to 0..1 so the result is a clean 0..1 priority rank.
+function priorityScore(e: any): number {
+  const rel = Math.max(0, Math.min(1, effScore(e)));
+  const tier = TIER_WEIGHT[e.impact_tier as number] ?? 0.4;          // unknown → mid
+  const n = e._sourceCount ?? 1;
+  const corroboration = Math.min(1, Math.log2(n) / 3);               // 1→0, 8+ sources→1
+  const ageH = e.occurred_at
+    ? (Date.now() - new Date(e.occurred_at).getTime()) / 3.6e6
+    : 9999;
+  const recency = Math.exp(-ageH / 168);                             // ~1-week characteristic decay
+  return rel * 0.4 + tier * 0.3 + corroboration * 0.2 + recency * 0.1;
 }
 
 function groupIntoEvents(signals: any[]): any[] {
@@ -335,17 +427,18 @@ function groupIntoEvents(signals: any[]): any[] {
   const events: any[] = [];
   for (const [eventId, members] of buckets) {
     const rep = members.reduce((best, s) => (effScore(s) > effScore(best) ? s : best), members[0]);
-    // newest member time drives default time-sort
     const newest = members.reduce((a, b) =>
       (new Date(b.occurred_at ?? 0) > new Date(a.occurred_at ?? 0) ? b : a), members[0]);
-    events.push({
-      ...rep,                              // representative attributes (spread to top level)
+    const evt: any = {
+      ...rep,
       occurred_at:   newest.occurred_at ?? rep.occurred_at,
       _eventId:      eventId,
       _members:      members,
       _sourceCount:  members.length,
       _memberSources: Array.from(new Set(members.map((m) => m.source))),
-    });
+    };
+    evt._priority = priorityScore(evt);
+    events.push(evt);
   }
   return events;
 }
@@ -354,7 +447,7 @@ function groupIntoEvents(signals: any[]): any[] {
 function SourceBadge({ source }: { source: string }) {
   const m = SOURCE_META[source] ?? { icon: "📌", label: source, color: "bg-slate-50 text-slate-500 border-slate-200" };
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 ${m.color}`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border shrink-0 ${m.color}`}>
       {m.icon} {m.label}
     </span>
   );
@@ -362,33 +455,38 @@ function SourceBadge({ source }: { source: string }) {
 
 // ── Cell renderer ─────────────────────────────────────────────────────────────
 
-function CellContent({ colKey, signal, onScoreSaved, expanded }: {
+function CellContent({ colKey, signal, onScoreSaved, expanded, rank, rankByPriority }: {
   colKey: string;
   signal: any;
   onScoreSaved: (id: string, score: number) => void;
   expanded: boolean;
+  rank: number;
+  rankByPriority: boolean;
 }) {
   const src = SOURCE_META[signal.source] ?? { icon: "📌", label: signal.source, color: "bg-slate-50 text-slate-500 border-slate-200" };
 
   switch (colKey) {
+    case "priority":
+      return <PriorityMeter score={signal._priority ?? 0} tier={signal.impact_tier} rank={rank} showRank={rankByPriority} />;
+
     case "source": {
-      // Build per-source-type count map from all members of this event cluster.
-      // For a 3×IR/OEM cluster: { ir: 3 }. For mixed: { ir: 2, press: 1 }.
+      // One badge per unique source type with ×N count.
       const memberSources: string[] = signal._memberSources ?? [signal.source];
-      const sourceCounts: Record<string, number> = {};
-      for (const s of memberSources) sourceCounts[s] = (sourceCounts[s] ?? 0) + 1;
-      const entries = Object.entries(sourceCounts);
+      const counts: Record<string, number> = {};
+      for (const s of memberSources) counts[s] = (counts[s] ?? 0) + 1;
+      // _memberSources is already de-duplicated, so recompute true per-source counts from members.
+      const trueCounts: Record<string, number> = {};
+      for (const m of (signal._members ?? [signal])) trueCounts[m.source] = (trueCounts[m.source] ?? 0) + 1;
+      const entries = Object.entries(trueCounts);
       return (
         <div className="flex flex-col gap-0.5 items-start">
           {entries.map(([srcKey, cnt]) => {
             const m = SOURCE_META[srcKey] ?? { icon: "📌", label: srcKey, color: "bg-slate-50 text-slate-500 border-slate-200" };
             return (
               <span key={srcKey}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium border ${m.color}`}>
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium border ${m.color}`}>
                 {m.icon} {m.label}
-                {cnt > 1 && (
-                  <span className="opacity-60 font-semibold text-[10px]">×{cnt}</span>
-                )}
+                {cnt > 1 && <span className="opacity-60 font-semibold text-[10px]">×{cnt}</span>}
               </span>
             );
           })}
@@ -397,58 +495,47 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
     }
 
     case "description": {
-      // Synthesised event meaning: prefer what_changed (LLM-generated at ingest,
-      // already captures "Anthropic disclosed $1.25B monthly compute deal" rather
-      // than "Anthropic nears profit, pays SpaceX $1.25B monthly — TechCrunch").
-      // For multi-source events the representative signal's what_changed naturally
-      // synthesises the event — no extra LLM call needed.
+      // Synthesised event meaning: prefer what_changed (LLM-generated at ingest).
       const eventTitle = signal.what_changed || signal.description;
-
-      // Show the raw article title(s) as subdued sub-text so analysts can
-      // still read the original headline. Strip trailing " — Source" suffixes
-      // (e.g. "... - Construction Dive", "... | Reuters").
       const rawTitle = (signal.description || "")
-        .replace(/\s*[-–|]\s*[A-Z][^-–|]{2,40}$/, "")   // "… - Reuters", "… | Bloomberg"
+        .replace(/\s*[-–|]\s*[A-Z][^-–|]{2,40}$/, "")
         .trim();
       const showRaw = rawTitle && rawTitle !== eventTitle && rawTitle.length > 10;
 
       return (
         <div className="flex flex-col gap-1">
-          {/* Primary: synthesised event meaning */}
-          <div className={`text-sm font-medium text-slate-800 leading-snug ${expanded ? "" : "line-clamp-2"}`}>
-            {eventTitle || <span className="text-slate-400 italic">No description</span>}
+          <div className={`text-sm font-semibold text-slate-800 leading-snug tracking-tight ${expanded ? "" : "line-clamp-2"}`}>
+            {eventTitle || <span className="text-slate-400 italic font-normal">No description</span>}
           </div>
-          {/* Secondary: cleaned raw headline for reference */}
           {showRaw && (
-            <div className={`text-[11px] text-slate-400 leading-snug italic ${expanded ? "" : "line-clamp-1"}`}>
+            <div className={`text-[11px] text-slate-400 leading-snug ${expanded ? "" : "line-clamp-1"}`}>
               {rawTitle}
             </div>
           )}
-          {signal.price_move && (
-            <span className="text-xs text-slate-500 font-mono">{signal.price_move}</span>
+          {(signal.price_move || signal.moves_pct) && (
+            <PriceTrend moves={signal.moves_pct} label={signal.price_move} />
           )}
-          {/* For multi-source events show source links inline */}
           {signal._sourceCount > 1 ? (
-            <div className="flex flex-col gap-0.5 mt-0.5">
-              {(signal._members ?? []).slice(0, expanded ? undefined : 2).map((m: any, i: number) => (
+            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+              {(signal._members ?? []).slice(0, expanded ? undefined : 3).map((m: any, i: number) => (
                 m.url ? (
                   <a key={i} href={m.url} target="_blank" rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors truncate"
+                    className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-blue-600 transition-colors"
                     title={m.description}>
                     ↗ {(SOURCE_META[m.source]?.label ?? m.source)}
                   </a>
                 ) : null
               ))}
-              {!expanded && (signal._members ?? []).length > 2 && (
-                <span className="text-[10px] text-slate-300">+{signal._members.length - 2} more</span>
+              {!expanded && (signal._members ?? []).length > 3 && (
+                <span className="text-[10px] text-slate-300">+{signal._members.length - 3} more</span>
               )}
             </div>
           ) : (
             signal.url && (
               <a href={signal.url} target="_blank" rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
+                className="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">
                 ↗ source
               </a>
             )
@@ -459,7 +546,7 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
     case "occurred_at":
       return signal.occurred_at ? (
-        <span className="text-xs text-slate-600 whitespace-nowrap">
+        <span className="text-xs text-slate-600 whitespace-nowrap font-medium">
           {new Date(signal.occurred_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
         </span>
       ) : <span className="text-slate-300 text-xs">—</span>;
@@ -481,7 +568,7 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
     case "mechanism":
       return signal.mechanism ? (
-        <span className={`text-xs text-slate-600 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.mechanism}</span>
+        <span className={`text-xs text-slate-600 leading-snug ${expanded ? "" : "line-clamp-3"}`}>{signal.mechanism}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "llm_score": {
@@ -504,7 +591,7 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
     case "scorer_reasoning":
       return signal.scorer_reasoning ? (
-        <span className={`text-[10px] text-slate-500 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.scorer_reasoning}</span>
+        <span className={`text-[10px] text-slate-500 leading-snug ${expanded ? "" : "line-clamp-3"}`}>{signal.scorer_reasoning}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "graph_entities":
@@ -515,7 +602,7 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
     case "triage_reasoning":
       return signal.triage_reasoning ? (
-        <span className={`text-[10px] text-slate-500 leading-snug italic ${expanded ? "" : "line-clamp-3"}`}>{signal.triage_reasoning}</span>
+        <span className={`text-[10px] text-slate-500 leading-snug ${expanded ? "" : "line-clamp-3"}`}>{signal.triage_reasoning}</span>
       ) : <span className="text-slate-300 text-xs">—</span>;
 
     case "event_class": {
@@ -549,7 +636,7 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
     case "confidence":
       return signal.confidence != null ? (
-        <span className={`text-xs font-mono font-semibold ${
+        <span className={`text-xs font-mono font-semibold tabular-nums ${
           signal.confidence >= 0.8 ? "text-emerald-700" :
           signal.confidence >= 0.5 ? "text-amber-700" : "text-slate-500"
         }`}>
@@ -567,28 +654,22 @@ function CellContent({ colKey, signal, onScoreSaved, expanded }: {
 
 // ── Sortable column header ────────────────────────────────────────────────────
 
-function ColHeader({
-  col, sort, onSort,
-}: {
-  col: ColDef;
-  sort: SortState | null;
-  onSort: (key: string) => void;
-}) {
+function ColHeader({ col, sort, onSort }: { col: ColDef; sort: SortState | null; onSort: (key: string) => void; }) {
   const active = sort?.col === col.key;
   const canSort = !!col.sortValue;
   return (
     <th
-      className={`px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider select-none
+      className={`px-2.5 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider select-none
         ${SECTION_COLORS[col.section]}
-        ${canSort ? "cursor-pointer hover:bg-slate-50" : ""}
-        ${col.key === "source" ? "pl-4" : ""}
+        ${canSort ? "cursor-pointer hover:text-slate-900" : ""}
+        ${col.key === "priority" ? "pl-4" : ""}
         ${col.key === "assess" ? "pr-4" : ""}`}
       onClick={canSort ? () => onSort(col.key) : undefined}
     >
       <span className="flex items-center gap-1">
         {col.label}
         {canSort && (
-          <span className={`text-[10px] ${active ? "opacity-100" : "opacity-25"}`}>
+          <span className={`text-[10px] ${active ? "opacity-100 text-slate-700" : "opacity-25"}`}>
             {active && sort?.dir === "asc" ? "↑" : active && sort?.dir === "desc" ? "↓" : "↕"}
           </span>
         )}
@@ -599,21 +680,51 @@ function ColHeader({
 
 // ── Filter pill button ────────────────────────────────────────────────────────
 
-function FilterPill({
-  label, count, active, onClick,
-}: {
+function FilterPill({ label, count, active, onClick }: {
   label: string; count?: number; active: boolean; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5
-        ${active ? "bg-slate-800 text-white" : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300"}`}
+      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5
+        ${active
+          ? "bg-slate-900 text-white shadow-sm"
+          : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
     >
       {label}
       {count != null && (
-        <span className={`text-[10px] ${active ? "text-slate-300" : "text-slate-400"}`}>{count}</span>
+        <span className={`text-[10px] tabular-nums ${active ? "text-slate-300" : "text-slate-400"}`}>{count}</span>
       )}
+    </button>
+  );
+}
+
+// ── KPI card ──────────────────────────────────────────────────────────────────
+
+function KpiCard({ label, value, sub, accent, active, onClick }: {
+  label: string; value: string | number; sub?: string;
+  accent?: "red" | "blue" | "amber" | "slate"; active?: boolean; onClick?: () => void;
+}) {
+  const accentBar: Record<string, string> = {
+    red: "bg-red-500", blue: "bg-blue-500", amber: "bg-amber-500", slate: "bg-slate-400",
+  };
+  const valueColor: Record<string, string> = {
+    red: "text-red-600", blue: "text-blue-600", amber: "text-amber-600", slate: "text-slate-900",
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={`group relative text-left bg-white rounded-2xl border p-4 overflow-hidden transition-all
+        ${onClick ? "hover:border-slate-300 hover:shadow-md cursor-pointer" : "cursor-default"}
+        ${active ? "border-slate-900 shadow-sm ring-1 ring-slate-900/10" : "border-slate-200"}`}
+    >
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${accentBar[accent ?? "slate"]} ${active ? "opacity-100" : "opacity-60"}`} />
+      <div className="pl-1.5">
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</div>
+        <div className={`text-2xl font-bold tabular-nums leading-none ${valueColor[accent ?? "slate"]}`}>{value}</div>
+        {sub && <div className="text-[11px] text-slate-400 mt-1.5 truncate">{sub}</div>}
+      </div>
     </button>
   );
 }
@@ -637,14 +748,12 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   const fileRef = useRef<HTMLInputElement>(null);
   const urlRef  = useRef<HTMLInputElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // Focus URL input on open
   useEffect(() => { urlRef.current?.focus(); }, []);
 
   async function submit(body: BodyInit, endpoint: string, isForm = false) {
@@ -696,7 +805,6 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-900">Add Signal Manually</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors">
@@ -706,7 +814,6 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-slate-100">
           {(["url", "file"] as const).map((t) => (
             <button key={t} onClick={() => { setTab(t); setStatus("idle"); setResult(null); }}
@@ -717,9 +824,7 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           ))}
         </div>
 
-        {/* Body */}
         <div className="p-6">
-
           {tab === "url" && (
             <form onSubmit={handleUrl} className="flex flex-col gap-3">
               <label className="text-xs font-medium text-slate-600">Web page URL</label>
@@ -770,7 +875,6 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
             </div>
           )}
 
-          {/* Error */}
           {status === "error" && (
             <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex flex-col gap-1">
               <p className="text-sm font-medium text-red-700">
@@ -783,7 +887,6 @@ function AddSignalModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
             </div>
           )}
 
-          {/* Result */}
           {status === "done" && result && (
             <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
               <p className="text-sm font-semibold text-slate-800 leading-snug">{result.title}</p>
@@ -837,12 +940,13 @@ const TIER_OPTS = [1, 2, 3, 4];
 export default function SignalsPage() {
   const [hours,          setHours]          = useState(48);
   const [isFull,         setIsFull]         = useState(false);
-  const [sort,           setSort]           = useState<SortState | null>({ col: "occurred_at", dir: "desc" });
+  const [sort,           setSort]           = useState<SortState | null>({ col: "priority", dir: "desc" });
   const [filterSource,     setFilterSource]     = useState<string | null>(null);
   const [filterTiers,      setFilterTiers]      = useState<Set<number>>(new Set());
   const [filterClass,      setFilterClass]      = useState<string | null>(null);
   const [filterDecision,   setFilterDecision]   = useState<string | null>(null);
   const [filterImpactType, setFilterImpactType] = useState<string | null>(null);
+  const [filterMultiSrc,   setFilterMultiSrc]   = useState(false);
   const [searchText,       setSearchText]       = useState("");
   const [overrides,      setOverrides]      = useState<Record<string, number>>({});
   const [expandedRows,   setExpandedRows]   = useState<Set<string>>(new Set());
@@ -878,11 +982,9 @@ export default function SignalsPage() {
     [rawSignals, overrides]
   );
 
-  // ── Group signals into events (event-centered view) ─────────────────────────
   const events = useMemo(() => groupIntoEvents(signals), [signals]);
 
   // ── Filter (operates on events) ─────────────────────────────────────────────
-
   const needle = searchText.trim().toLowerCase();
 
   const filtered = useMemo(() => events.filter((e) => {
@@ -891,8 +993,8 @@ export default function SignalsPage() {
     if (filterClass      && e.event_class !== filterClass)             return false;
     if (filterDecision   && e.decision !== filterDecision)             return false;
     if (filterImpactType && e.impact_type !== filterImpactType)        return false;
+    if (filterMultiSrc   && (e._sourceCount ?? 1) < 2)                 return false;
     if (needle) {
-      // Search across ALL member signals so a hit in any source surfaces the event.
       const hay = e._members.map((m: any) => [
         m.description, m.what_changed, m.mechanism,
         m.scorer_reasoning, m.triage_reasoning, m.url,
@@ -901,19 +1003,16 @@ export default function SignalsPage() {
       if (!hay.includes(needle)) return false;
     }
     return true;
-  }), [events, filterSource, filterTiers, filterClass, filterDecision, filterImpactType, needle]);
-
-  // ── Sort ──────────────────────────────────────────────────────────────────
+  }), [events, filterSource, filterTiers, filterClass, filterDecision, filterImpactType, filterMultiSrc, needle]);
 
   const visible = useMemo(() => sortSignals(filtered, sort), [filtered, sort]);
-
-  // ── Sort toggle ───────────────────────────────────────────────────────────
+  const rankByPriority = sort?.col === "priority" && sort?.dir === "desc";
 
   function handleSort(key: string) {
     setSort((prev) =>
       prev?.col === key
         ? { col: key, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { col: key, dir: "asc" }
+        : { col: key, dir: key === "priority" || key === "llm_score" ? "desc" : "asc" }
     );
   }
 
@@ -982,16 +1081,34 @@ export default function SignalsPage() {
       if (e.impact_type) a[e.impact_type] = (a[e.impact_type] || 0) + 1; return a;
     }, {}), [events]);
 
+  // ── KPI metrics ─────────────────────────────────────────────────────────────
+
+  const kpis = useMemo(() => {
+    const t1 = events.filter((e) => e.impact_tier === 1).length;
+    const corroborated = events.filter((e) => (e._sourceCount ?? 1) > 1).length;
+    const escalated = events.filter((e) => effScore(e) >= 0.6).length;
+    const lead = events.reduce((best: any, e: any) =>
+      (!best || (e._priority ?? 0) > (best._priority ?? 0)) ? e : best, null);
+    const leadTitle = lead ? (lead.what_changed || lead.description || "—") : "—";
+    return { t1, corroborated, escalated, leadTitle };
+  }, [events]);
+
   const handleScoreSaved = useCallback(
     (id: string, score: number) => setOverrides((p) => ({ ...p, [id]: score })),
     []
   );
 
-  // ── Active columns ────────────────────────────────────────────────────────
+  const hasActiveFilters = filterSource || filterTiers.size > 0 || filterClass ||
+    filterImpactType || filterMultiSrc || searchText;
+
+  function clearAllFilters() {
+    setFilterSource(null); setFilterTiers(new Set()); setFilterClass(null);
+    setFilterImpactType(null); setFilterMultiSrc(false); setSearchText("");
+  }
+
+  // ── Active columns ──────────────────────────────────────────────────────────
 
   const activeCols = COLUMNS.filter((c) => isFull || c.essential);
-
-  // ── Section dividers for full view header ─────────────────────────────────
 
   type SectionSpan = { section: "general" | "scorer" | "triage"; span: number; label: string };
   const sectionRow = useMemo((): SectionSpan[] => {
@@ -1011,23 +1128,30 @@ export default function SignalsPage() {
   }, [activeCols, isFull]);
 
   return (
-    <div className="p-6 max-w-full">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/50">
+    <div className="p-6 lg:p-8 max-w-[1700px] mx-auto">
 
       {/* ── Header row ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Signals</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {visible.length} event{visible.length !== 1 ? "s" : ""} · {signals.length} source signal{signals.length !== 1 ? "s" : ""} · auto-refreshes every 30 s
+          <div className="flex items-center gap-2.5 mb-1">
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" title="Live · auto-refreshes every 30s" />
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Signal Intelligence</h1>
+          </div>
+          <p className="text-slate-500 text-sm">
+            <span className="font-semibold text-slate-700 tabular-nums">{visible.length}</span> events
+            {" · "}
+            <span className="tabular-nums">{signals.length}</span> source signals
+            {" · "}
+            ranked by composite priority · live
           </p>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold
-              hover:bg-blue-700 transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold
+              hover:bg-slate-800 transition-colors shadow-sm"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
               <path d="M6 1a.75.75 0 0 1 .75.75v3.5h3.5a.75.75 0 0 1 0 1.5h-3.5v3.5a.75.75 0 0 1-1.5 0v-3.5H1.75a.75.75 0 0 1 0-1.5h3.5v-3.5A.75.75 0 0 1 6 1z"/>
@@ -1035,51 +1159,61 @@ export default function SignalsPage() {
             Add Signal
           </button>
 
-          {/* View toggle */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          <button
-            onClick={() => setIsFull(false)}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
-              ${!isFull ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            Essential
-          </button>
-          <button
-            onClick={() => setIsFull(true)}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
-              ${isFull ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            Full
-          </button>
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            <button
+              onClick={() => setIsFull(false)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                ${!isFull ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Essential
+            </button>
+            <button
+              onClick={() => setIsFull(true)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                ${isFull ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Full
+            </button>
+          </div>
         </div>
-        </div>{/* end actions */}
+      </div>
+
+      {/* ── KPI strip ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <KpiCard label="Events Tracked" value={events.length} sub={`${signals.length} source signals`} accent="slate" />
+        <KpiCard label="Critical · Tier 1" value={kpis.t1} sub="highest-impact events" accent="red"
+          active={filterTiers.has(1) && filterTiers.size === 1}
+          onClick={() => setFilterTiers((prev) => (prev.has(1) && prev.size === 1) ? new Set() : new Set([1]))} />
+        <KpiCard label="Corroborated" value={kpis.corroborated} sub="multi-source events" accent="blue"
+          active={filterMultiSrc}
+          onClick={() => setFilterMultiSrc((v) => !v)} />
+        <KpiCard label="Escalated · ≥0.60" value={kpis.escalated} sub={kpis.leadTitle} accent="amber" />
       </div>
 
       {/* ── Filter bar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 mb-4">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3.5 mb-5 flex flex-col gap-2.5">
 
-        {/* Row 0: Search */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12 shrink-0">Search</span>
-          <div className="relative flex-1 max-w-sm">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-              width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+        {/* Row 0: Search + time window */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
               <path d="M6.5 1a5.5 5.5 0 1 0 3.89 9.453l3.329 3.329a.75.75 0 1 0 1.06-1.06l-3.328-3.33A5.5 5.5 0 0 0 6.5 1zm-4 5.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/>
             </svg>
             <input
               type="text"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Filter by description, mechanism, reasoning, URL…"
-              className="w-full pl-8 pr-8 py-1.5 text-xs rounded-lg border border-slate-200
-                bg-white placeholder-slate-400 text-slate-700
-                focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400
+              placeholder="Search description, mechanism, reasoning, URL…"
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200
+                bg-slate-50 placeholder-slate-400 text-slate-700
+                focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-300 focus:bg-white
                 transition-colors"
             />
             {searchText && (
               <button
                 onClick={() => setSearchText("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 aria-label="Clear search"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
@@ -1088,11 +1222,21 @@ export default function SignalsPage() {
               </button>
             )}
           </div>
+
+          <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+            {HOUR_OPTIONS.map((o) => (
+              <button key={o.value} onClick={() => setHours(o.value)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors
+                  ${hours === o.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Row 1: Source + time window */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12">Source</span>
+        {/* Row 1: Source */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-14 shrink-0">Source</span>
           <FilterPill label="All" count={events.length} active={!filterSource} onClick={() => setFilterSource(null)} />
           {Object.keys(SOURCE_META).map((src) => {
             const m = SOURCE_META[src];
@@ -1107,22 +1251,11 @@ export default function SignalsPage() {
               />
             );
           })}
-
-          {/* Time window — pushed right */}
-          <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            {HOUR_OPTIONS.map((o) => (
-              <button key={o.value} onClick={() => setHours(o.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                  ${hours === o.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                {o.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Row 2: Tier */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12">Tier</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-14 shrink-0">Tier</span>
           <FilterPill label="All" active={filterTiers.size === 0}
             onClick={() => setFilterTiers(new Set())} />
           {TIER_OPTS.map((t) => {
@@ -1141,10 +1274,10 @@ export default function SignalsPage() {
           })}
         </div>
 
-        {/* Row 3: Event class (only show classes that have signals) */}
+        {/* Row 3: Event class */}
         {Object.keys(classCounts).length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12">Class</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-14 shrink-0">Class</span>
             <FilterPill label="All" active={!filterClass} onClick={() => setFilterClass(null)} />
             {Object.entries(classCounts).map(([ec, cnt]) => {
               const m = EVENT_CLASS_META[ec];
@@ -1159,10 +1292,10 @@ export default function SignalsPage() {
           </div>
         )}
 
-        {/* Row 4: Impact type (only show types that have signals) */}
+        {/* Row 4: Impact type */}
         {Object.keys(impactTypeCounts).length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-12 shrink-0">Impact</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-14 shrink-0">Impact</span>
             <FilterPill label="All" active={!filterImpactType} onClick={() => setFilterImpactType(null)} />
             {Object.entries(impactTypeCounts)
               .sort((a, b) => (b[1] as number) - (a[1] as number))
@@ -1178,9 +1311,9 @@ export default function SignalsPage() {
         )}
       </div>
 
-      {/* ── Merge action bar (appears when events are selected) ──────────── */}
+      {/* ── Merge action bar ───────────────────────────────────────────── */}
       {selectedEvents.size > 0 && (
-        <div className="mb-3 flex flex-col gap-1.5">
+        <div className="mb-4 flex flex-col gap-1.5">
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
             <span className="text-sm font-medium text-blue-900">
               {selectedEvents.size} event{selectedEvents.size !== 1 ? "s" : ""} selected
@@ -1212,16 +1345,15 @@ export default function SignalsPage() {
       )}
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-sm border-collapse">
 
-          {/* Full view: section header row */}
           {isFull && sectionRow.length > 0 && (
             <thead>
               <tr className="border-b border-slate-100">
                 {sectionRow.map((s, i) => (
                   <th key={i} colSpan={s.span}
-                    className={`px-2 py-1 text-left text-[9px] font-bold uppercase tracking-widest
+                    className={`px-2.5 py-1.5 text-left text-[9px] font-bold uppercase tracking-widest
                       ${i === 0 ? "pl-4" : ""}
                       ${s.section === "scorer" ? "text-violet-500 bg-violet-50/40 border-l-2 border-l-violet-200" : ""}
                       ${s.section === "triage"  ? "text-teal-600  bg-teal-50/40  border-l-2 border-l-teal-200"  : ""}
@@ -1234,9 +1366,8 @@ export default function SignalsPage() {
             </thead>
           )}
 
-          {/* Column header row */}
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/50">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80">
               {activeCols.map((col) => (
                 <ColHeader key={col.key} col={col} sort={sort} onSort={handleSort} />
               ))}
@@ -1246,14 +1377,14 @@ export default function SignalsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={activeCols.length} className="px-4 py-10 text-center text-slate-400 text-sm animate-pulse">
+                <td colSpan={activeCols.length} className="px-4 py-12 text-center text-slate-400 text-sm animate-pulse">
                   Loading signals…
                 </td>
               </tr>
             )}
             {!isLoading && error && (
               <tr>
-                <td colSpan={activeCols.length} className="px-4 py-10 text-center text-sm">
+                <td colSpan={activeCols.length} className="px-4 py-12 text-center text-sm">
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-red-500 font-medium">API unavailable</span>
                     <span className="text-slate-400 text-xs max-w-sm">
@@ -1268,44 +1399,45 @@ export default function SignalsPage() {
             )}
             {!isLoading && visible.length === 0 && (
               <tr>
-                <td colSpan={activeCols.length} className="px-4 py-10 text-center text-slate-400 text-sm">
+                <td colSpan={activeCols.length} className="px-4 py-12 text-center text-slate-400 text-sm">
                   No events match the current filters.
                 </td>
               </tr>
             )}
-            {visible.map((signal: any) => {
+            {visible.map((signal: any, idx: number) => {
               const isExpanded = expandedRows.has(signal.id);
               const isSelected = selectedEvents.has(signal._eventId);
               const multi = (signal._sourceCount ?? 1) > 1;
+              const railColor = TIER_RAIL[signal.impact_tier as number] ?? "border-l-transparent";
               return (
               <Fragment key={signal._eventId}>
               <tr
                 onClick={() => toggleRow(signal.id)}
                 className={`group border-b border-slate-100 cursor-pointer transition-colors
                   ${isSelected ? "bg-blue-50/60" : isExpanded ? "bg-slate-50" : "hover:bg-slate-50/70"}`}>
-                {activeCols.map((col) => (
+                {activeCols.map((col, ci) => (
                   <td
                     key={col.key}
-                    className={`px-2 py-3 align-top ${col.width}
-                      ${col.key === "source"  ? "pl-4" : ""}
+                    className={`px-2.5 py-3.5 align-top ${col.width}
+                      ${col.key === "priority" ? `pl-4 border-l-[3px] ${railColor}` : ""}
                       ${col.key === "assess"  ? "pr-4 opacity-0 group-hover:opacity-100 transition-opacity" : ""}
-                      ${col.section === "scorer" && isFull ? "bg-violet-50/20 border-l border-l-violet-100 first:border-l-0" : ""}
-                      ${col.section === "triage"  && isFull ? "bg-teal-50/20  border-l border-l-teal-100  first:border-l-0" : ""}`}
+                      ${col.section === "scorer" && isFull ? "bg-violet-50/20 border-l border-l-violet-100" : ""}
+                      ${col.section === "triage"  && isFull ? "bg-teal-50/20  border-l border-l-teal-100" : ""}`}
                   >
-                    {col.key === "source" ? (
+                    {col.key === "priority" ? (
                       <div className="flex items-start gap-2">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onClick={(e) => e.stopPropagation()}
                           onChange={() => toggleSelect(signal._eventId)}
-                          className="mt-0.5 accent-blue-600 cursor-pointer"
+                          className="mt-0.5 accent-blue-600 cursor-pointer shrink-0"
                           title="Select event for merge"
                         />
-                        <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
+                        <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} rank={idx + 1} rankByPriority={rankByPriority} />
                       </div>
                     ) : (
-                      <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} />
+                      <CellContent colKey={col.key} signal={signal} onScoreSaved={handleScoreSaved} expanded={isExpanded} rank={idx + 1} rankByPriority={rankByPriority} />
                     )}
                   </td>
                 ))}
@@ -1354,25 +1486,25 @@ export default function SignalsPage() {
       </div>
 
       {/* Footer */}
-      <div className="mt-2 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-        <span>{visible.length} events shown</span>
+      <div className="mt-3 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
+        <span className="tabular-nums">{visible.length} events shown</span>
         {events.length !== visible.length && (
-          <span>· {events.length - visible.length} hidden by filters</span>
+          <span className="tabular-nums">· {events.length - visible.length} hidden by filters</span>
         )}
         {sort && (
-          <span>· sorted by {COLUMNS.find((c) => c.key === sort.col)?.label} {sort.dir}</span>
+          <span>· sorted by {COLUMNS.find((c) => c.key === sort.col)?.label} {sort.dir === "desc" ? "↓" : "↑"}</span>
         )}
-        {/* Active filter chips */}
-        {(filterSource || filterTiers.size > 0 || filterClass || filterImpactType || searchText) && (
+        {hasActiveFilters && (
           <span className="ml-auto flex items-center gap-1.5">
             <span className="text-slate-300">|</span>
             {filterSource     && <span className="px-2 py-0.5 bg-slate-100 rounded-full">{filterSource}</span>}
             {[...filterTiers].map(t => <span key={t} className="px-2 py-0.5 bg-slate-100 rounded-full">T{t}</span>)}
             {filterClass      && <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full">{filterClass}</span>}
             {filterImpactType && <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded-full">{filterImpactType}</span>}
+            {filterMultiSrc   && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">multi-source</span>}
             {searchText       && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">"{searchText}"</span>}
             <button
-              onClick={() => { setFilterSource(null); setFilterTiers(new Set()); setFilterClass(null); setFilterImpactType(null); setSearchText(""); }}
+              onClick={clearAllFilters}
               className="px-2 py-0.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors"
             >
               Clear all
@@ -1387,6 +1519,7 @@ export default function SignalsPage() {
           onAdded={() => { void mutate(); }}
         />
       )}
+    </div>
     </div>
   );
 }

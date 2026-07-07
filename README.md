@@ -1,23 +1,70 @@
 # CIS — Contract Intelligence System
 
-> Contract-grounded supply-chain intelligence for power transformer procurement.
-> Ingests real signals → maps them onto a supplier knowledge graph → produces clause-level impact assessments → learns from analyst corrections via DSPy optimization.
+> An autonomous AI analyst for a fragile, high-stakes supply chain: the giant electrical transformers that power grids and AI data centers.
+> It reads the world all day, works out what matters, explains why, and gets sharper every time an expert corrects it.
 
-**Status: v0.8 — fully functional, deployed on Render**
+**Live demo:** [web dashboard](https://ashablovskiy.github.io/CIS-PT/) · [API docs](https://cis-pt-production.up.railway.app/docs)
+
+A personal project by **Andrei Shablovskiy** ([@ashablovskiy](https://github.com/ashablovskiy)) — built end-to-end to demonstrate applied AI engineering on real, live data (no mock data anywhere).
 
 ---
 
-## What this is
+## What it does (in plain terms)
 
-CIS demonstrates that a sourcing-domain intelligence system can move from *"scores in a dashboard"* to *"defensible, contract-grounded arguments that improve over time"* — running on real data, not mocked.
+Large power transformers are the quiet bottleneck of the modern economy. They cost millions, take **2–4 years** to build, and a single late component can hold up an entire grid connection or data-center. Whoever buys them needs to see trouble coming — a copper spike, a factory fire in Korea, a new hyperscaler build-out, a tariff — often months before it shows up in a price.
 
-**The wedge vs incumbents (Everstream, Resilinc, Interos):**
+CIS is a software "analyst" that does this watching automatically. Every hour it:
 
-1. **Clause-level contract reasoning** — not "copper risk is amber," but "which contracts have a steel indexation clause and what is the recalculation trigger threshold?"
-2. **Transparent multi-hop reasoning** — signal → commodity → supplier → contract → exposure, each step cited to a source.
-3. **Adaptive feedback loop** — analyst accept/edit/reject decisions build DSPy training examples; a weekly MIPROv2 run recompiles the synthesizer prompt automatically.
-4. **Agentic ingestion** — six parallel LLM-driven agents (GDELT, prices, logistics, press, demand, SEC EDGAR), not a single scraper.
-5. **XGBoost price enrichment** — magnitude estimates from a commodity-price model (MAE 6.1%) augment every LLM assessment.
+1. **Reads** the news, commodity markets, shipping feeds, corporate filings, and hyperscaler announcements.
+2. **Judges** each item: is this actually relevant to transformer supply, and how badly? Most things are noise; it says so.
+3. **Connects the dots** across a map of who makes what, where, and how it ships — so a steel-mill story becomes a specific list of exposed suppliers, plants, and shipping lanes.
+4. **Notices convergence**: many small, seemingly unrelated signals piling onto the same weak point — the real early-warning that a shortage is forming.
+5. **Writes it up** as a plain, cited argument ("this clause's price trigger is now met, here's the reasoning"), not just a red/amber/green dot.
+6. **Learns**: when a human accepts or edits an assessment, that correction is fed back and the system automatically retrains its own reasoning.
+
+The result is a live "network health" picture of the whole transformer supply chain, plus specific, explainable assessments an analyst can trust or challenge.
+
+---
+
+## The interesting part — frontier AI, and how it's used here
+
+This project is a tour of how modern AI techniques combine into one working system. Each technique below is doing a real job, not a demo:
+
+- **Agentic ingestion.** Eight autonomous source agents (GDELT world-news, commodity prices, ocean logistics, trade press, hyperscaler demand, SEC filings, investor relations, Chinese steel) run on a shared pipeline: pull → rule-filter → LLM-score → persist. Each degrades gracefully when a feed or API is down.
+
+- **Tiered LLM judgment at scale.** Claude Haiku scores every incoming item into a strict 4-tier relevance taxonomy with a controlled "impact mechanism" vocabulary — cheap, fast, and calibrated to be *conservative* (most news is correctly ignored).
+
+- **Knowledge-graph grounding.** A Neo4j graph models the real supply chain (commodity → material → plant → supplier → port → shipping lane). A signal is expanded by multi-hop Cypher traversal into its actual "blast radius" of affected entities — this is how the system reasons about second-order effects.
+
+- **Vector RAG + semantic de-duplication.** Voyage `voyage-3-large` embeddings in pgvector power two things: retrieving historical precedents for calibration, and clustering coverage of the *same* real-world event across dozens of outlets (cosine > 0.85 within 72h) so 15 articles count as one — not 15× the alarm.
+
+- **A "network-state" engine (graph theory meets live signals).** The supply chain is a weighted directed graph. Reverse-graph **PageRank** ranks *systemic influence* (who is most depended-upon). **Personalized PageRank**, seeded by live signal pressure, diffuses stress through the network to reveal where independent pressures **converge** — a formal model of "small unrelated events combining into a disruption." Named companies (Layer 1) roll up into 8 systemic forces (Layer 2) for a readable health index.
+
+- **A 7-node agentic reasoning pipeline with self-critique.** Built on LangGraph: `triage → graph retrieval → similarity search → contract matching → synthesis → critic → persist`. The synthesizer (Claude Opus, via a typed **DSPy** signature) writes a structured, step-by-step assessment; a separate **critic** node then checks it for grounding, coverage, and over-confidence before anything is saved.
+
+- **Neuro-symbolic hybrid.** An **XGBoost** commodity-price model runs alongside the LLM and injects a data-driven magnitude estimate into every price call — combining learned statistical priors with language-model reasoning.
+
+- **Self-improving prompts (the headline).** Analyst accept/edit/reject decisions become **DSPy training examples**. A weekly **MIPROv2** optimization run recompiles the synthesizer's prompt program automatically, keeps it only if it beats the current one on a held-out set, and hot-loads the winner. The system's core reasoning literally improves from human feedback, without a human touching a prompt.
+
+- **Production-grade LLM ops.** Versioned prompt registry with sub-5-minute hot-reload (edit prompts in the UI, no redeploy), per-model daily budget caps enforced on every call, full trace IDs, and fallback behavior at every external boundary.
+
+---
+
+## Architecture at a glance
+
+```mermaid
+flowchart TD
+  A[8 ingestion agents<br/>news · prices · logistics · filings · demand] -->|raw signals| B[Haiku relevance scorer<br/>4-tier · escalate/review/discard]
+  B --> C[Voyage embeddings + pgvector<br/>cross-source event clustering]
+  C --> D[Knowledge-graph grounding<br/>Neo4j supply chain]
+  D --> E[Network-State Engine<br/>PageRank influence + pressure]
+  D -->|escalated| F[LangGraph 7-node pipeline<br/>retrieve → synthesize Opus/DSPy → critic]
+  F -->|+ XGBoost price model| G[Structured, cited assessments]
+  E --> H[Next.js dashboard<br/>live network health · signals · assessments]
+  G --> H
+  H -->|analyst accept / edit / reject| I[DSPy training examples]
+  I -->|weekly MIPROv2| F
+```
 
 ---
 
@@ -25,230 +72,19 @@ CIS demonstrates that a sourcing-domain intelligence system can move from *"scor
 
 | Layer | Choice |
 |---|---|
-| Backend | Python 3.12, FastAPI, uv |
-| Frontend | Next.js 16 (App Router), TypeScript, Tailwind v4 |
-| Relational DB | Neon Postgres + pgvector (1024-dim Voyage embeddings) |
-| Knowledge graph | Neo4j AuraDB (supplier → plant → port → lane) |
-| LLM — reasoning | Claude Opus `claude-opus-4-5-20251101` via DSPy |
-| LLM — bulk | Claude Haiku `claude-haiku-4-5-20251001` |
-| Embeddings | Voyage AI `voyage-3-large` (1024 dim) |
-| Agent orchestration | LangGraph 1.2 (7-node StateGraph) |
-| Prompt optimization | DSPy 3.2 + MIPROv2 |
-| Scheduling | Inngest (9 cron functions) |
-| ML enrichment | XGBoost — commodity price impact model |
-| Observability | LangSmith |
-| Deployment | Render (API + web) |
+| Reasoning LLM | Claude Opus (`claude-opus-4-5`) via DSPy typed signatures |
+| Bulk LLM | Claude Haiku (`claude-haiku-4-5`) — scoring, triage, critique |
+| Embeddings | Voyage AI `voyage-3-large` (1024-dim) |
+| Agent orchestration | LangGraph — 7-node `StateGraph` |
+| Prompt optimization | DSPy + MIPROv2 (feedback-driven) |
+| Classical ML | XGBoost — commodity price impact |
+| Graph reasoning | Neo4j + networkx (PageRank / personalized PageRank) |
+| Relational + vector | Neon Postgres + pgvector |
+| Backend | Python 3.12, FastAPI, async SQLAlchemy |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind v4 |
+| Scheduling | Inngest cron functions |
+| Observability | LangSmith tracing |
 
 ---
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  6 Ingestion Agents (Inngest crons, 15–60 min cadence)      │
-│  GDELT · Prices · Logistics · Press · Demand · SEC EDGAR    │
-└───────────────────┬─────────────────────────────────────────┘
-                    │ Signals (Postgres + pgvector)
-                    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Relevance Scorer (Haiku)                                   │
-│  escalate / classify / discard                              │
-└───────────────────┬─────────────────────────────────────────┘
-                    │ escalated signals
-                    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  LangGraph Assessment Pipeline (7 nodes)                    │
-│  triage → graph_retrieval → similarity_search →             │
-│  contract_matching → synthesizer → critic → persist         │
-│                                                             │
-│  Synthesizer: Claude Opus via DSPy ImpactAssessment sig.   │
-│  + XGBoost price magnitude enrichment                       │
-└───────────────────┬─────────────────────────────────────────┘
-                    │ Assessments (Postgres)
-                    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Next.js Dashboard                                          │
-│  Signal volume chart · Assessment detail · Prompt editor   │
-│  Analyst feedback → DSPy training examples → optimizer     │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Local setup
-
-### Prerequisites
-
-- [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- [pnpm](https://pnpm.io/) — `npm i -g pnpm`
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — for local Postgres + Neo4j
-- (Optional) `brew install libomp` — needed for XGBoost on macOS
-
-### 1. Clone and install
-
-```bash
-git clone <repo-url>
-cd CIM_v.0
-uv sync                  # Python deps → .venv
-pnpm install             # Node deps (all workspaces)
-```
-
-### 2. Configure environment
-
-```bash
-cp .env.example .env
-# Required: ANTHROPIC_API_KEY, VOYAGE_API_KEY
-# Required: DATABASE_URL, DATABASE_SYNC_URL (Neon or local Docker)
-# Required: NEO4J_URI, NEO4J_PASSWORD
-# Optional: LANGSMITH_API_KEY, INNGEST_EVENT_KEY, GCP_PROJECT_ID
-```
-
-### 3. Start local infrastructure
-
-```bash
-docker compose up -d     # Postgres (pgvector:pg16) + Neo4j
-```
-
-### 4. Run database migrations
-
-```bash
-uv run alembic upgrade head
-```
-
-### 5. Seed data
-
-```bash
-# Seed prompt templates (relevance_scorer, triage_classifier, critic, daily_brief)
-uv run python scripts/seed_prompts.py
-
-# Seed Neo4j knowledge graph (suppliers, plants, ports, lanes)
-uv run python scripts/seed_graph.py
-
-# Generate sample contracts
-uv run python scripts/generate_contracts.py
-```
-
-### 6. (Optional) Train XGBoost price model
-
-```bash
-# Fetches 2 years of commodity prices from yfinance — requires internet
-# Runtime ~2 minutes; persists models to apps/api/ml/models/
-uv run python scripts/train_price_model.py
-```
-
-### 7. Start services
-
-**Terminal 1 — API:**
-```bash
-uv run uvicorn apps.api.main:app --reload
-# → http://localhost:8000/docs
-```
-
-**Terminal 2 — Web:**
-```bash
-cd apps/web && pnpm dev
-# → http://localhost:3000
-```
-
----
-
-## Key API endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Service health |
-| GET | `/api/signals` | Recent signals (filterable by decision, hours) |
-| GET | `/api/signals/stats` | Volume stats + time series for chart |
-| GET | `/api/assessments` | Assessment list |
-| GET | `/api/assessments/{id}` | Full assessment detail |
-| POST | `/api/feedback` | Submit analyst feedback (accept/edit/reject) |
-| GET | `/api/feedback/stats` | Feedback counts + optimizer readiness |
-| GET | `/api/prompts` | Active prompt versions |
-| PUT | `/api/prompts/{name}` | Publish new prompt version (hot-reloads) |
-| GET | `/api/briefs/latest` | Latest daily scout brief |
-| POST | `/api/inngest` | Inngest webhook (cron triggers) |
-
-Full interactive docs: `http://localhost:8000/docs`
-
----
-
-## Project structure
-
-```
-apps/
-  api/
-    assess/nodes/      LangGraph pipeline nodes (7 nodes)
-    agents/            LangGraph state definition
-    db/                SQLAlchemy models + Alembic migrations
-    dspy_lab/          DSPy signatures, optimizer, training data
-    ingest/            Ingestion runner + relevance scorer
-    inngest_functions/ Cron definitions (9 functions)
-    ml/                XGBoost price impact estimator
-    prompts/           Prompt registry (DB-backed, 5-min TTL cache)
-    routes/            FastAPI route handlers
-    scout/             Daily Scout Agent (brief generation)
-  web/
-    app/               Next.js App Router pages
-      assessments/     Assessment list + detail
-      signals/         Signal explorer
-      admin/prompts/   Prompt editor UI
-eval/
-  run_eval.py          Tier 1/2/3 evaluation harness
-scripts/
-  seed_prompts.py      Seed prompt_templates table
-  seed_graph.py        Seed Neo4j knowledge graph
-  train_price_model.py Train XGBoost from yfinance data
-tests/
-  unit/
-    test_metrics.py          DSPy metric tests (15)
-    test_prompt_registry.py  Prompt registry tests (13)
-    test_feedback_training.py Feedback → training example tests (11)
-    test_price_impact.py     XGBoost estimator tests (18)
-```
-
----
-
-## Feedback → optimization loop
-
-1. Analyst views an assessment and clicks **Accept**, **Needs Edit**, or **Reject**
-2. Accept/Edit writes a `DspyTrainingExample` row (weight 1.0 / 1.5)
-3. `GET /api/feedback/stats` reports `optimizer_ready: true` once ≥5 examples exist
-4. The **weekly Inngest cron** (Sunday 04:00 UTC) runs MIPROv2 with all training examples
-5. Compiled program saved to `apps/api/dspy_lab/compiled/`; loaded at next API restart
-
----
-
-## Prompt management
-
-All four Haiku prompts (`relevance_scorer`, `triage_classifier`, `critic`, `daily_brief`) are stored in the `prompt_templates` table with full version history. The admin UI at `/admin/prompts` lets you edit and publish new versions — changes take effect within 5 minutes (cache TTL) with no deploy needed.
-
----
-
-## Deployment (Render)
-
-```bash
-# Deploy via render.yaml Blueprint:
-# 1. Push this repo to GitHub
-# 2. In Render dashboard: New → Blueprint → point at render.yaml
-# 3. Fill in env var values for all `sync: false` keys
-# 4. Deploy
-```
-
-The `render.yaml` defines two services:
-- `cis-api` — Docker (FastAPI), auto-built from `Dockerfile`
-- `cis-web` — Node (Next.js pnpm build + start)
-
----
-
-## Cost
-
-Target ≤ $150/month. Anthropic API is the main driver (~$90–115/month at steady-state ingestion cadence). XGBoost inference is free (runs in-process). See `.env.example` for per-model budget cap settings.
-
-| Service | Est. monthly |
-|---------|-------------|
-| Anthropic (Haiku + Opus) | $90–115 |
-| Neon Postgres | $0 (free tier) |
-| Neo4j AuraDB | $0 (free tier) |
-| Voyage AI | $5–10 |
-| Render (2 services) | $14 |
-| **Total** | **~$120–140** |
+*Full technical teardown: [`docs/SYSTEM_BLUEPRINT.md`](docs/SYSTEM_BLUEPRINT.md).*
